@@ -8,6 +8,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -25,6 +26,21 @@ function createWindow() {
   // Handle screen recording permissions and sources
   ipcMain.handle('get-desktop-sources', async () => {
     return await desktopCapturer.getSources({ types: ['window', 'screen'] });
+  });
+
+  // Automatically select the default screen to prevent the "Select Window" prompt
+  win.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Pick the primary screen automatically
+      if (sources && sources.length > 0) {
+        callback({ video: sources[0], audio: 'loopback' });
+      } else {
+        callback();
+      }
+    }).catch(err => {
+      console.error('Error getting sources for auto-select:', err);
+      callback();
+    });
   });
 
   // Handle native folder selection

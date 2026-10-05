@@ -197,12 +197,7 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
 
         {/* GNOA Software Watermark in bottom right corner (Screenshot 1, 2, 3) */}
         <div className="absolute right-4 bottom-2 select-none opacity-40 hover:opacity-75 transition-opacity flex flex-col items-end pointer-events-none">
-          <div className="text-2xl font-black tracking-tighter text-slate-400 font-sans leading-none">
-            GNOA
-          </div>
-          <div className="text-[9px] uppercase tracking-widest text-slate-500 font-semibold">
-            Software
-          </div>
+          <img src="/logo.png" alt="Logo" className="h-10 object-contain drop-shadow-md" />
         </div>
       </div>
 

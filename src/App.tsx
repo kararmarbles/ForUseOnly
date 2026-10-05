@@ -382,9 +382,9 @@ export default function App() {
       if (!settings.disablePlayVideoNotification) {
         setShowSuccessBanner(true);
         try {
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Recording Complete', {
-              body: `Video saved as ${fileName} in ${settings.destinationFolder}`,
+          if ('Notification' in window) {
+            new Notification('Done!', {
+              body: `your recording has been finished`,
             });
           }
         } catch (e) {
@@ -394,7 +394,7 @@ export default function App() {
     } else {
       // In auto-continue mode, send subtle desktop notification if permitted
       try {
-        if ('Notification' in window && Notification.permission === 'granted') {
+        if ('Notification' in window) {
           new Notification('Recording Segment Saved', {
             body: `Video segment saved as ${fileName}. Recording next segment...`,
           });
@@ -535,8 +535,66 @@ export default function App() {
     }
 
     try {
+      let finalVideoTracks: MediaStreamTrack[] = [...activeStream.getVideoTracks()];
+
+      if (source === 'screen' && settings.showWebcamOverlay && webcamStream) {
+        const canvas = document.createElement('canvas');
+        const videoTrack = activeStream.getVideoTracks()[0];
+        const { width = 1920, height = 1080 } = videoTrack.getSettings();
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        if (ctx) {
+          const screenVideo = document.createElement('video');
+          screenVideo.srcObject = activeStream;
+          screenVideo.muted = true;
+          screenVideo.play().catch(() => {});
+
+          const webcamVideo = document.createElement('video');
+          webcamVideo.srcObject = webcamStream;
+          webcamVideo.muted = true;
+          webcamVideo.play().catch(() => {});
+
+          const compositeFrame = () => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+              return;
+            }
+            if (videoTrack.readyState === 'ended') {
+              return;
+            }
+            ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+
+            const w = settings.webcamOverlaySize === 'small' ? canvas.width * 0.15 : settings.webcamOverlaySize === 'large' ? canvas.width * 0.25 : canvas.width * 0.2;
+            const h = (w / 16) * 9;
+            let x = canvas.width - w - 20;
+            let y = canvas.height - h - 20;
+
+            if (settings.webcamOverlayPosition === 'top-left') {
+              x = 20; y = 20;
+            } else if (settings.webcamOverlayPosition === 'top-right') {
+              x = canvas.width - w - 20; y = 20;
+            } else if (settings.webcamOverlayPosition === 'bottom-left') {
+              x = 20; y = canvas.height - h - 20;
+            }
+
+            ctx.drawImage(webcamVideo, x, y, w, h);
+            requestAnimationFrame(compositeFrame);
+          };
+          
+          compositeFrame();
+          
+          try {
+            const canvasStream = canvas.captureStream(settings.frameRate);
+            finalVideoTracks = canvasStream.getVideoTracks();
+          } catch (e) {
+            console.warn('Canvas capture stream failed', e);
+          }
+        }
+      }
+
       // Combine video track + mixed audio tracks
-      const tracks: MediaStreamTrack[] = [...activeStream.getVideoTracks()];
+      const tracks: MediaStreamTrack[] = [...finalVideoTracks];
 
       // Get mixed audio (Microphone + System Sound)
       const mixedAudioTracks = audioEngine.getMixedAudioTracks();

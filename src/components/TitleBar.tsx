@@ -56,14 +56,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </div>
 
           <div className="flex items-center space-x-1.5">
-            {/* 3.5 Floppy Disk Icon (authentic NCH Debut icon) */}
-            <svg
-              className="w-4 h-4 text-cyan-400 drop-shadow-sm flex-shrink-0"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M19 2H5C3.89 2 3 2.89 3 4V20C3 21.1 3.89 22 5 22H19C20.1 22 21 21.1 21 20V4C21 2.89 20.1 2 19 2ZM12 4C12.55 4 13 4.45 13 5V8C13 8.55 12.55 9 12 9H7C6.45 9 6 8.55 6 8V5C6 4.45 6.45 4 7 4H12ZM19 20H5V13C5 12.45 5.45 12 6 12H18C18.55 12 19 12.45 19 13V20Z" />
-            </svg>
+            <img src="/logo.png" alt="Icon" className="w-4 h-4 flex-shrink-0 object-contain drop-shadow-sm" />
             <span className="font-semibold text-slate-100 tracking-wide text-[11.5px]">
               GNOA Recording Suit - Licensed software
             </span>
@@ -71,14 +64,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </div>
       ) : (
         <div className="flex items-center space-x-2 pl-2">
-          {/* Windows Floppy disk icon */}
-          <svg
-            className="w-4 h-4 text-cyan-400 drop-shadow-sm flex-shrink-0"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M19 2H5C3.89 2 3 2.89 3 4V20C3 21.1 3.89 22 5 22H19C20.1 22 21 21.1 21 20V4C21 2.89 20.1 2 19 2ZM12 4C12.55 4 13 4.45 13 5V8C13 8.55 12.55 9 12 9H7C6.45 9 6 8.55 6 8V5C6 4.45 6.45 4 7 4H12ZM19 20H5V13C5 12.45 5.45 12 6 12H18C18.55 12 19 12.45 19 13V20Z" />
-          </svg>
+          <img src="/logo.png" alt="Icon" className="w-4 h-4 flex-shrink-0 object-contain drop-shadow-sm" />
           <span className="font-medium text-slate-200 tracking-wide text-[12px]">
             GNOA Recording Suit - Licensed software
           </span>
