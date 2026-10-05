@@ -55,10 +55,84 @@ export default function App() {
   const [countdownValue, setCountdownValue] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState(-42);
 
-  // Settings & Storage
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [recordings, setRecordings] = useState<RecordingItem[]>([]);
-  const [snapshots, setSnapshots] = useState<SnapshotItem[]>([]);
+  // Settings & Storage (Persistent in localStorage & electron userData)
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    try {
+      const saved = localStorage.getItem('gnoa_settings');
+      if (saved) {
+        return { ...defaultSettings, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.warn('Could not read settings from localStorage:', e);
+    }
+    return defaultSettings;
+  });
+
+  const [recordings, setRecordings] = useState<RecordingItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('gnoa_recordings_history');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return [];
+  });
+
+  const [snapshots, setSnapshots] = useState<SnapshotItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('gnoa_snapshots_history');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return [];
+  });
+
+  // Save settings persistently
+  const handleSaveSettings = (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    try {
+      localStorage.setItem('gnoa_settings', JSON.stringify(newSettings));
+      if ((window as any).require) {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.invoke('save-persistent-settings', newSettings);
+      }
+    } catch (e) {
+      console.warn('Failed to persist settings:', e);
+    }
+  };
+
+  // Load persistent settings from Electron userData on startup
+  useEffect(() => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.invoke('load-persistent-settings').then((fileSettings: any) => {
+          if (fileSettings) {
+            setSettings((prev) => ({ ...prev, ...fileSettings }));
+          }
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, []);
+
+  // Save recordings metadata history
+  useEffect(() => {
+    try {
+      const metadataOnly = recordings.map(({ id, title, url, date, durationSeconds, fileSizeFormatted, sourceType, resolution, savedFilePath }) => ({
+        id, title, url, date, durationSeconds, fileSizeFormatted, sourceType, resolution, savedFilePath
+      }));
+      localStorage.setItem('gnoa_recordings_history', JSON.stringify(metadataOnly));
+    } catch (e) {
+      // ignore
+    }
+  }, [recordings]);
 
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -251,14 +325,16 @@ export default function App() {
 
       const combinedStream = new MediaStream(tracks);
 
-      // Determine mimeType
+      // Determine mimeType prioritizing MKV
       const mimeTypes = [
+        'video/x-matroska;codecs=avc1,opus',
+        'video/x-matroska;codecs=vp9,opus',
+        'video/x-matroska',
         'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
         'video/webm',
         'video/mp4',
       ];
-      const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+      const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/x-matroska';
 
       const recorder = new MediaRecorder(combinedStream, {
         mimeType: selectedMime,
@@ -287,6 +363,17 @@ export default function App() {
       setElapsedMs(0);
       setShowSuccessBanner(false);
 
+      // Auto-minimize software window when recording starts (Issue #4)
+      if ((window as any).require) {
+        try {
+          const { ipcRenderer } = (window as any).require('electron');
+          ipcRenderer.send('window-minimize');
+        } catch (e) {
+          // ignore
+        }
+      }
+      setIsMinimizedToTray(true);
+
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = window.setInterval(() => {
         const now = Date.now();
@@ -306,11 +393,6 @@ export default function App() {
           }
         }
       }, 50);
-
-      // Minimize to tray if configured
-      if (settings.minimizeWhenRecording && settings.minimizeToTray) {
-        setIsMinimizedToTray(true);
-      }
     } catch (err) {
       console.error('Failed to start MediaRecorder:', err);
       alert('Could not start recording with current stream.');
@@ -318,7 +400,7 @@ export default function App() {
   };
 
   // --- Finalize Recording into Blob & Add to Library ---
-  const finalizeRecording = () => {
+  const finalizeRecording = async () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -328,16 +410,41 @@ export default function App() {
       audioEngine.playTone(440, 0.2); // Stop beep
     }
 
-    const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+    const blob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
     const url = URL.createObjectURL(blob);
     const now = new Date();
     const durationSec = Math.max(1, Math.round(elapsedMs / 1000));
 
-    // Generate filename based on template
+    // Generate filename based on template - MKV format (Issue #5)
     const dateFormatted = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     const timeFormatted = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
     const autoNumber = (recordings.length + 1).toString().padStart(3, '0');
     const title = `GNOA_${dateFormatted}_${timeFormatted}_${autoNumber}`;
+    const fileName = `${title}.mkv`;
+
+    // Auto-save recording directly into user's desired destination folder (Issue #7)
+    let savedFilePath = '';
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        const arrayBuffer = await blob.arrayBuffer();
+        const saveRes = await ipcRenderer.invoke('save-recording-file', {
+          destinationFolder: settings.destinationFolder,
+          fileName,
+          buffer: new Uint8Array(arrayBuffer),
+        });
+        if (saveRes && saveRes.success) {
+          savedFilePath = saveRes.filePath;
+        }
+
+        // Restore window from auto-minimize when recording finishes (Issue #4)
+        ipcRenderer.send('window-restore');
+      } catch (err) {
+        console.warn('Auto-save note:', err);
+      }
+    }
+
+    setIsMinimizedToTray(false);
 
     const newRecording: RecordingItem = {
       id: Date.now().toString(),
@@ -349,14 +456,25 @@ export default function App() {
       fileSizeFormatted: formatFileSize(blob.size),
       sourceType: source,
       resolution: source === 'screen' ? '1920x1080' : '1280x720',
+      savedFilePath,
     };
 
     setRecordings((prev) => [newRecording, ...prev]);
     setLastRecordedItem(newRecording);
     setRecordingState('idle');
 
+    // Show Debut-style notification (Issue #3)
     if (!settings.disablePlayVideoNotification) {
       setShowSuccessBanner(true);
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Recording Complete', {
+            body: `Video saved as ${fileName} in ${settings.destinationFolder}`,
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   };
 
@@ -418,6 +536,14 @@ export default function App() {
       setCountdownValue(null);
     }
 
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.send('window-restore');
+      } catch (e) {}
+    }
+    setIsMinimizedToTray(false);
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     } else {
@@ -428,6 +554,61 @@ export default function App() {
       }
     }
   };
+
+  // --- Reveal in Windows Explorer ---
+  const handleShowInFolder = (filePath?: string) => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        if (filePath) {
+          ipcRenderer.invoke('show-item-in-folder', filePath);
+        } else {
+          ipcRenderer.invoke('open-directory', settings.destinationFolder);
+        }
+      } catch (e) {
+        alert(`Recordings folder: ${settings.destinationFolder}`);
+      }
+    } else {
+      alert(`Recordings folder: ${settings.destinationFolder}`);
+    }
+  };
+
+  // --- Automatic & Scheduled Recording Start (Issue #1) ---
+  useEffect(() => {
+    // 1. Auto-start recording on launch after delay if enabled
+    if (settings.startRecordingAutomatically) {
+      const delayMs = (settings.autoStartDelaySeconds || 3) * 1000;
+      const timer = setTimeout(() => {
+        if (recordingState === 'idle') {
+          handleRecord();
+        }
+      }, delayMs);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.startRecordingAutomatically, settings.autoStartDelaySeconds]);
+
+  useEffect(() => {
+    // 2. Scheduled automatic recording at specific time (HH:MM)
+    if (!settings.enableScheduledRecording || !settings.scheduledRecordingTime) return;
+
+    let lastTriggeredMinute = '';
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const currentH = now.getHours().toString().padStart(2, '0');
+      const currentM = now.getMinutes().toString().padStart(2, '0');
+      const currentHM = `${currentH}:${currentM}`;
+
+      if (currentHM === settings.scheduledRecordingTime && lastTriggeredMinute !== currentHM) {
+        lastTriggeredMinute = currentHM;
+        if (recordingState === 'idle') {
+          handleRecord();
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [settings.enableScheduledRecording, settings.scheduledRecordingTime, recordingState]);
 
   // --- Instant Snapshot Capture ---
   const handleTakeSnapshot = () => {
@@ -645,7 +826,9 @@ export default function App() {
                 setRecordingsModalOpen(true);
               }
             }}
-            onOpenRecordingsFolder={() => setRecordingsModalOpen(true)}
+            onOpenRecordingsFolder={() => handleShowInFolder()}
+            onShowInFolder={handleShowInFolder}
+            lastRecordedItem={lastRecordedItem}
             audioActive={settings.recordMicrophone || settings.recordSpeakers}
           />
         </div>
@@ -657,7 +840,7 @@ export default function App() {
         onClose={() => setOptionsModalOpen(false)}
         initialTab={optionsInitialTab}
         settings={settings}
-        onSaveSettings={(newSettings) => setSettings(newSettings)}
+        onSaveSettings={handleSaveSettings}
       />
 
       {/* Recordings & Snapshots Library Modal */}

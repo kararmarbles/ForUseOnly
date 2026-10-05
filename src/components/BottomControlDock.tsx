@@ -16,6 +16,8 @@ interface BottomControlDockProps {
   onCloseSuccessBanner: () => void;
   onPlayLastRecording: () => void;
   onOpenRecordingsFolder: () => void;
+  onShowInFolder?: (filePath?: string) => void;
+  lastRecordedItem?: any;
   audioActive: boolean;
 }
 
@@ -32,6 +34,8 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   onCloseSuccessBanner,
   onPlayLastRecording,
   onOpenRecordingsFolder,
+  onShowInFolder,
+  lastRecordedItem,
   audioActive,
 }) => {
   const isRecording = recordingState === 'recording';
@@ -44,31 +48,44 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
 
   return (
     <div className="flex flex-col bg-[#383838] border-t border-[#484848] select-none shadow-md">
-      {/* Green Success Banner (Screenshots 1 & 2) */}
+      {/* Authentic NCH Debut-style Recording Complete Notification Banner */}
       {showSuccessBanner && (
-        <div className="bg-[#4caf50] text-white px-4 py-1.5 flex items-center justify-between text-xs font-semibold shadow-inner transition-all animate-fadeIn">
-          <div className="flex items-center space-x-4">
-            <span className="text-white drop-shadow">Recording successful.</span>
+        <div className="bg-[#2e7d32] border-b border-[#1b5e20] text-white px-4 py-2 flex items-center justify-between text-xs font-sans shadow-lg transition-all animate-fadeIn">
+          <div className="flex items-center space-x-3 truncate">
+            <span className="bg-[#1b5e20] text-emerald-200 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide uppercase">
+              DEBUT NOTIFICATION
+            </span>
+            <span className="font-semibold text-white drop-shadow">
+              Recording complete: <span className="font-mono text-amber-200">{lastRecordedItem ? `${lastRecordedItem.title}.mkv` : 'Video.mkv'}</span>
+            </span>
+            <span className="text-emerald-200 text-[11px] truncate max-w-xs opacity-90">
+              Auto-saved to: {lastRecordedItem?.savedFilePath || settings.destinationFolder}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2 flex-shrink-0">
             <button
               onClick={onPlayLastRecording}
-              className="px-3 py-1 bg-white hover:bg-slate-100 text-black text-xs font-semibold rounded shadow border border-red-700 active:scale-95 transition-transform"
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-black text-xs font-bold rounded shadow-sm border border-slate-300 active:scale-95 transition-transform flex items-center space-x-1"
             >
-              Play Recording
+              <span>▶</span>
+              <span>Play Recording</span>
             </button>
             <button
-              onClick={onOpenRecordingsFolder}
-              className="px-3 py-1 bg-white hover:bg-slate-100 text-black text-xs font-semibold rounded shadow border border-emerald-700 active:scale-95 transition-transform"
+              onClick={() => onShowInFolder ? onShowInFolder(lastRecordedItem?.savedFilePath) : onOpenRecordingsFolder()}
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-black text-xs font-bold rounded shadow-sm border border-slate-300 active:scale-95 transition-transform flex items-center space-x-1"
             >
-              Open Recordings Folder
+              <span>📁</span>
+              <span>Show in Folder</span>
+            </button>
+            <button
+              onClick={onCloseSuccessBanner}
+              className="text-white hover:text-red-300 font-bold text-sm px-2 py-0.5 rounded hover:bg-black/20 transition-colors ml-2"
+              title="Close notification"
+            >
+              ✕
             </button>
           </div>
-          <button
-            onClick={onCloseSuccessBanner}
-            className="text-white hover:text-black/80 font-bold text-sm px-1.5 py-0.5 rounded hover:bg-white/20"
-            title="Dismiss notification"
-          >
-            ✕
-          </button>
         </div>
       )}
 

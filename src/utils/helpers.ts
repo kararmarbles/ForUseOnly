@@ -54,9 +54,12 @@ export const defaultSettings: AppSettings = {
   showWatermark: true,
   cursorHighlight: true,
 
-  // Other
+  // Other & Schedule
   runOnComputerStart: true,
   startRecordingAutomatically: false,
+  autoStartDelaySeconds: 3,
+  enableScheduledRecording: false,
+  scheduledRecordingTime: '12:00',
   displayTaskbarNotification: true,
   showRecordingPreview: true,
 };

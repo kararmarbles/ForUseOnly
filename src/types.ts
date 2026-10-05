@@ -62,9 +62,12 @@ export interface AppSettings {
   showWatermark: boolean;
   cursorHighlight: boolean;
 
-  // Other / Startup
+  // Other / Startup & Schedule
   runOnComputerStart: boolean;
   startRecordingAutomatically: boolean;
+  autoStartDelaySeconds: number; // e.g., 3 or 5 seconds after opening
+  enableScheduledRecording: boolean;
+  scheduledRecordingTime: string; // "HH:MM" e.g., "14:30"
   displayTaskbarNotification: boolean;
   showRecordingPreview: boolean;
 }
@@ -80,6 +83,7 @@ export interface RecordingItem {
   thumbnailUrl?: string;
   sourceType: CaptureSource;
   resolution: string;
+  savedFilePath?: string;
 }
 
 export interface SnapshotItem {

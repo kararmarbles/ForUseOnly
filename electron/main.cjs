@@ -1,5 +1,6 @@
-const { app, BrowserWindow, systemPreferences, desktopCapturer, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, systemPreferences, desktopCapturer, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const { autoUpdater } = require('electron-updater');
 
@@ -26,6 +27,7 @@ function createWindow() {
     return await desktopCapturer.getSources({ types: ['window', 'screen'] });
   });
 
+  // Handle native folder selection
   ipcMain.handle('dialog:openDirectory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openDirectory']
@@ -34,6 +36,77 @@ function createWindow() {
       return null;
     } else {
       return filePaths;
+    }
+  });
+
+  // Window minimize and restore for auto-minimize during recording
+  ipcMain.on('window-minimize', () => {
+    win.minimize();
+  });
+
+  ipcMain.on('window-restore', () => {
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.show();
+    win.focus();
+  });
+
+  // Save recording file directly to chosen destination folder
+  ipcMain.handle('save-recording-file', async (event, { destinationFolder, fileName, buffer }) => {
+    try {
+      const targetDir = destinationFolder || path.join(app.getPath('videos'), 'GNOA Recordings');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      const fullPath = path.join(targetDir, fileName);
+      fs.writeFileSync(fullPath, Buffer.from(buffer));
+      return { success: true, filePath: fullPath };
+    } catch (err) {
+      console.error('Failed to auto-save recording:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Show item in Windows Explorer folder
+  ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+    if (filePath && fs.existsSync(filePath)) {
+      shell.showItemInFolder(filePath);
+      return true;
+    }
+    return false;
+  });
+
+  // Open directory in Windows Explorer
+  ipcMain.handle('open-directory', async (event, dirPath) => {
+    if (dirPath && fs.existsSync(dirPath)) {
+      shell.openPath(dirPath);
+      return true;
+    }
+    return false;
+  });
+
+  // Persistent settings storage in userData
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+  ipcMain.handle('load-persistent-settings', () => {
+    try {
+      if (fs.existsSync(settingsPath)) {
+        const raw = fs.readFileSync(settingsPath, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn('Could not read settings from disk:', e);
+    }
+    return null;
+  });
+
+  ipcMain.handle('save-persistent-settings', (event, data) => {
+    try {
+      fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2), 'utf8');
+      return true;
+    } catch (e) {
+      console.warn('Could not save settings to disk:', e);
+      return false;
     }
   });
 

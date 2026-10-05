@@ -789,16 +789,65 @@ export const OptionsModal: React.FC<OptionsModalProps> = ({
 
           {/* SCHEDULE TAB */}
           {activeTab === 'schedule' && (
-            <div className="space-y-3">
-              <div className="font-semibold text-slate-200">Recording Schedule</div>
-              <div className="bg-[#2d2d2d] p-3 rounded border border-[#484848] space-y-2 text-slate-300">
-                <p>Schedule automatic unattended recording tasks by time, date, and recurrence.</p>
-                <button
-                  onClick={() => alert('Add Schedule Task wizard')}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
-                >
-                  + Add New Scheduled Task
-                </button>
+            <div className="space-y-4">
+              <div className="border border-[#484848] rounded p-3 bg-[#2d2d2d] space-y-3">
+                <div className="font-semibold text-slate-200">Scheduled Automatic Recording</div>
+                <div className="pl-2 space-y-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.enableScheduledRecording}
+                      onChange={(e) => setLocalSettings({ ...localSettings, enableScheduledRecording: e.target.checked })}
+                      className="rounded accent-blue-500"
+                    />
+                    <span className="font-semibold text-slate-200">Enable scheduled recording at specific time</span>
+                  </label>
+
+                  <div className="flex items-center space-x-3 pl-6">
+                    <span className="text-slate-300">Start Time (24h format):</span>
+                    <input
+                      type="time"
+                      disabled={!localSettings.enableScheduledRecording}
+                      value={localSettings.scheduledRecordingTime || '12:00'}
+                      onChange={(e) => setLocalSettings({ ...localSettings, scheduledRecordingTime: e.target.value })}
+                      className="bg-[#1e1e1e] border border-[#555] rounded px-2.5 py-1 text-cyan-400 font-mono font-semibold disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-[#484848] rounded p-3 bg-[#2d2d2d] space-y-3">
+                <div className="font-semibold text-slate-200">Auto-Start on Application Launch</div>
+                <div className="pl-2 space-y-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.startRecordingAutomatically}
+                      onChange={(e) => setLocalSettings({ ...localSettings, startRecordingAutomatically: e.target.checked })}
+                      className="rounded accent-blue-500"
+                    />
+                    <span className="font-semibold text-slate-200">Start recording automatically when application launches</span>
+                  </label>
+
+                  <div className="flex items-center space-x-3 pl-6">
+                    <span className="text-slate-300">Wait delay before recording starts:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      disabled={!localSettings.startRecordingAutomatically}
+                      value={localSettings.autoStartDelaySeconds || 3}
+                      onChange={(e) => setLocalSettings({ ...localSettings, autoStartDelaySeconds: parseInt(e.target.value, 10) || 3 })}
+                      className="w-16 bg-[#1e1e1e] border border-[#555] rounded px-2 py-1 text-center text-slate-100 disabled:opacity-40 font-mono"
+                    />
+                    <span className="text-slate-400">seconds</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-[#484848] rounded p-3 bg-[#2d2d2d] space-y-2 text-slate-400 text-[11px]">
+                <div className="font-semibold text-slate-300">Notice:</div>
+                <p>Scheduled and auto-start recordings will automatically minimize the application and save the output directly as MKV into your chosen destination folder.</p>
               </div>
             </div>
           )}

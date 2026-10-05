@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { RecordingItem, SnapshotItem } from '../types';
 import { formatDurationSimple } from '../utils/helpers';
-import { Play, Download, Trash2, Folder, Film, Image as ImageIcon, X } from 'lucide-react';
+import { Play, Download, Trash2, Folder, Film, Image as ImageIcon, X, Pause, FolderOpen } from 'lucide-react';
 
 interface RecordingsModalProps {
   isOpen: boolean;
@@ -27,6 +27,76 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'recordings' | 'snapshots'>('recordings');
   const [activePlayingItem, setActivePlayingItem] = useState<RecordingItem | null>(initialPlayItem);
   const [viewingSnapshot, setViewingSnapshot] = useState<SnapshotItem | null>(null);
+
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    setActivePlayingItem(initialPlayItem);
+    setCurrentPlaybackTime(0);
+    setIsPlaying(true);
+  }, [initialPlayItem]);
+
+  // Fix Chromium / MediaRecorder duration bug on load
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      if (videoRef.current.duration === Infinity || isNaN(videoRef.current.duration)) {
+        videoRef.current.currentTime = 1e101;
+        videoRef.current.ontimeupdate = () => {
+          if (videoRef.current) {
+            videoRef.current.ontimeupdate = null;
+            videoRef.current.currentTime = 0;
+            videoRef.current.play().catch(() => {});
+            setIsPlaying(true);
+          }
+        };
+      }
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentPlaybackTime(videoRef.current.currentTime);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentPlaybackTime(newTime);
+    if (videoRef.current) {
+      videoRef.current.currentTime = newTime;
+    }
+  };
+
+  const togglePlayPause = () => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current.play();
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+  };
+
+  const handleShowFileInFolder = (filePath?: string) => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        if (filePath) {
+          ipcRenderer.invoke('show-item-in-folder', filePath);
+        } else {
+          ipcRenderer.invoke('open-directory', destinationFolder);
+        }
+      } catch (e) {
+        alert(`File saved in: ${destinationFolder}`);
+      }
+    } else {
+      alert(`File saved in: ${destinationFolder}`);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -54,9 +124,10 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
         {activePlayingItem && (
           <div className="bg-black p-3 flex flex-col items-center border-b border-[#444]">
             <div className="w-full flex justify-between items-center text-xs text-slate-300 pb-2">
-              <span className="font-semibold text-white flex items-center space-x-1">
+              <span className="font-semibold text-white flex items-center space-x-1.5">
                 <Film className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Now Playing: {activePlayingItem.title}</span>
+                <span>Now Playing: {activePlayingItem.title}.mkv</span>
+                <span className="text-[10px] bg-blue-900/60 text-blue-300 px-1.5 py-0.5 rounded font-mono">MKV</span>
               </span>
               <button
                 onClick={() => setActivePlayingItem(null)}
@@ -65,12 +136,67 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
                 Close Player ✕
               </button>
             </div>
-            <video
-              src={activePlayingItem.url}
-              controls
-              autoPlay
-              className="max-h-72 rounded border border-[#333] w-auto max-w-full"
-            />
+            
+            <div className="w-full flex flex-col items-center">
+              <video
+                ref={videoRef}
+                src={activePlayingItem.url}
+                autoPlay
+                onLoadedMetadata={handleLoadedMetadata}
+                onTimeUpdate={handleTimeUpdate}
+                onEnded={() => setIsPlaying(false)}
+                className="max-h-72 rounded-t border border-[#333] w-auto max-w-full bg-black"
+              />
+
+              {/* Custom Scrubbing & Time Control Bar */}
+              <div className="w-full bg-[#1b1b1b] px-3 py-2 flex items-center space-x-3 rounded-b border border-t-0 border-[#333]">
+                <button
+                  onClick={togglePlayPause}
+                  className="px-2.5 py-1 bg-[#333] hover:bg-[#444] rounded text-white font-semibold flex items-center space-x-1 text-xs"
+                >
+                  {isPlaying ? (
+                    <>
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Play</span>
+                    </>
+                  )}
+                </button>
+
+                <span className="font-mono text-cyan-400 text-xs min-w-[45px] text-right">
+                  {formatDurationSimple(Math.floor(currentPlaybackTime))}
+                </span>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={activePlayingItem.durationSeconds || (videoRef.current && isFinite(videoRef.current.duration) ? videoRef.current.duration : 10)}
+                  step={0.1}
+                  value={currentPlaybackTime}
+                  onChange={handleSeek}
+                  className="flex-1 accent-cyan-400 cursor-pointer h-1.5 bg-[#333] rounded"
+                />
+
+                <span className="font-mono text-slate-300 text-xs min-w-[45px]">
+                  {formatDurationSimple(activePlayingItem.durationSeconds)}
+                </span>
+
+                {activePlayingItem.savedFilePath && (
+                  <button
+                    onClick={() => handleShowFileInFolder(activePlayingItem.savedFilePath)}
+                    className="text-xs bg-[#2a2a2a] hover:bg-[#383838] text-slate-300 px-2 py-1 rounded border border-[#444] flex items-center space-x-1"
+                    title="Reveal in Windows Explorer"
+                  >
+                    <FolderOpen className="w-3 h-3 text-amber-400" />
+                    <span>Location</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -108,7 +234,7 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
             }`}
           >
             <Film className="w-3.5 h-3.5 text-blue-400" />
-            <span>Video Recordings ({recordings.length})</span>
+            <span>MKV Video Recordings ({recordings.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('snapshots')}
@@ -148,7 +274,10 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
                         )}
                       </div>
                       <div>
-                        <div className="font-semibold text-white text-[12px]">{rec.title}</div>
+                        <div className="font-semibold text-white text-[12px] flex items-center space-x-1.5">
+                          <span>{rec.title}.mkv</span>
+                          <span className="text-[9px] bg-blue-900/60 text-blue-300 px-1 py-0.2 rounded font-mono">MKV</span>
+                        </div>
                         <div className="text-[10px] text-slate-400 flex items-center space-x-2">
                           <span>{rec.date}</span>
                           <span>•</span>
@@ -158,6 +287,11 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
                           <span>•</span>
                           <span className="text-cyan-400 uppercase font-mono">{rec.sourceType}</span>
                         </div>
+                        {rec.savedFilePath && (
+                          <div className="text-[9.5px] text-emerald-400 truncate max-w-sm mt-0.5">
+                            ✓ Saved to: {rec.savedFilePath}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -171,14 +305,25 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
                         <span>Play</span>
                       </button>
 
+                      {rec.savedFilePath && (
+                        <button
+                          onClick={() => handleShowFileInFolder(rec.savedFilePath)}
+                          className="px-2.5 py-1 bg-[#383838] hover:bg-[#484848] text-amber-300 rounded font-medium flex items-center space-x-1 border border-[#555]"
+                          title="Show in Windows Explorer"
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          <span>Folder</span>
+                        </button>
+                      )}
+
                       <a
                         href={rec.url}
-                        download={`${rec.title}.webm`}
+                        download={`${rec.title}.mkv`}
                         className="px-2.5 py-1 bg-[#404040] hover:bg-[#505050] text-slate-200 rounded font-medium flex items-center space-x-1 border border-[#555]"
-                        title="Download to computer"
+                        title="Download MKV file"
                       >
                         <Download className="w-3 h-3" />
-                        <span>Save</span>
+                        <span>Save MKV</span>
                       </a>
 
                       <button
