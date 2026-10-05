@@ -26,7 +26,7 @@
     "publish": {
       "provider": "github",
       "owner": "kararmarbles",
-      "repo": "recording-Software-gnoa"
+      "repo": "ForUseOnly"
     },
     "win": {
       "target": [
