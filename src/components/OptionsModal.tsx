@@ -438,6 +438,65 @@ export const OptionsModal: React.FC<OptionsModalProps> = ({
                 <span>Automatically overwrite old recordings when space is low with new recordings</span>
               </label>
 
+              {/* Recording Video Format Box (MP4, MKV, WebM) */}
+              <div className="border border-[#484848] rounded p-2.5 bg-[#2d2d2d] space-y-2">
+                <div className="font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Recording Video Format</span>
+                  <span className="text-[10px] text-cyan-400 font-mono font-bold uppercase">
+                    Active: {localSettings.outputFormat || 'mp4'}
+                  </span>
+                </div>
+                <div className="space-y-2 pl-2">
+                  <label className="flex items-start space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recording_format"
+                      checked={localSettings.outputFormat === 'mp4' || !localSettings.outputFormat}
+                      onChange={() => setLocalSettings({ ...localSettings, outputFormat: 'mp4' })}
+                      className="accent-blue-500 mt-0.5"
+                    />
+                    <div>
+                      <div className="font-semibold text-slate-200">MP4 (*.mp4) - Recommended (High Compatibility)</div>
+                      <div className="text-[10.5px] text-slate-400">
+                        Universal MP4 encoded with H.264/AAC for smooth playback in Windows Media Player, Movies & TV, browsers, and mobile devices.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recording_format"
+                      checked={localSettings.outputFormat === 'mkv'}
+                      onChange={() => setLocalSettings({ ...localSettings, outputFormat: 'mkv' })}
+                      className="accent-blue-500 mt-0.5"
+                    />
+                    <div>
+                      <div className="font-semibold text-slate-200">MKV (*.mkv) - Matroska Video</div>
+                      <div className="text-[10.5px] text-slate-400">
+                        Matroska multimedia container format with high crash resilience.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recording_format"
+                      checked={localSettings.outputFormat === 'webm'}
+                      onChange={() => setLocalSettings({ ...localSettings, outputFormat: 'webm' })}
+                      className="accent-blue-500 mt-0.5"
+                    />
+                    <div>
+                      <div className="font-semibold text-slate-200">WebM (*.webm) - HTML5 Video</div>
+                      <div className="text-[10.5px] text-slate-400">
+                        Lightweight web video format using VP9/Opus codecs.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {/* Destination Folder */}
               <div className="border border-[#484848] rounded p-2.5 bg-[#2d2d2d] space-y-1.5">
                 <div className="font-semibold text-slate-300">Destination Folder</div>

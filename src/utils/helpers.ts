@@ -2,7 +2,7 @@ import { AppSettings } from '../types';
 
 export const defaultSettings: AppSettings = {
   // Video
-  frameRate: 10,
+  frameRate: 15, // 15 FPS default as requested
   loadLastSelection: true,
   applyGammaRamp: false,
   webcamDeviceId: '',
@@ -24,6 +24,7 @@ export const defaultSettings: AppSettings = {
   toneIntervalSeconds: 30,
 
   // Output
+  outputFormat: 'mp4', // Default to MP4 version as requested
   warnLowDiskSpace: 300,
   overwriteOldRecordings: false,
   destinationFolder: 'D:\\Recordings',

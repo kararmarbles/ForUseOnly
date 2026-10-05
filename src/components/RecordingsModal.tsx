@@ -126,8 +126,10 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
             <div className="w-full flex justify-between items-center text-xs text-slate-300 pb-2">
               <span className="font-semibold text-white flex items-center space-x-1.5">
                 <Film className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Now Playing: {activePlayingItem.title}.mkv</span>
-                <span className="text-[10px] bg-blue-900/60 text-blue-300 px-1.5 py-0.5 rounded font-mono">MKV</span>
+                <span>Now Playing: {activePlayingItem.title}.{activePlayingItem.savedFilePath ? activePlayingItem.savedFilePath.split('.').pop() : 'mp4'}</span>
+                <span className="text-[10px] bg-blue-900/60 text-blue-300 px-1.5 py-0.5 rounded font-mono uppercase">
+                  {activePlayingItem.savedFilePath ? activePlayingItem.savedFilePath.split('.').pop() : 'MP4'}
+                </span>
               </span>
               <button
                 onClick={() => setActivePlayingItem(null)}
@@ -234,7 +236,7 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
             }`}
           >
             <Film className="w-3.5 h-3.5 text-blue-400" />
-            <span>MKV Video Recordings ({recordings.length})</span>
+            <span>Video Recordings ({recordings.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('snapshots')}
@@ -260,82 +262,85 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {recordings.map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="flex items-center justify-between p-2.5 rounded bg-[#242424] hover:bg-[#282828] border border-[#3e3e3e] transition-colors"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-16 h-10 bg-black rounded overflow-hidden flex items-center justify-center border border-[#444] flex-shrink-0">
-                        {rec.thumbnailUrl ? (
-                          <img src={rec.thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
-                        ) : (
-                          <Film className="w-5 h-5 text-slate-500" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-white text-[12px] flex items-center space-x-1.5">
-                          <span>{rec.title}.mkv</span>
-                          <span className="text-[9px] bg-blue-900/60 text-blue-300 px-1 py-0.2 rounded font-mono">MKV</span>
+                {recordings.map((rec) => {
+                  const ext = rec.savedFilePath ? rec.savedFilePath.split('.').pop() : 'mp4';
+                  return (
+                    <div
+                      key={rec.id}
+                      className="flex items-center justify-between p-2.5 rounded bg-[#242424] hover:bg-[#282828] border border-[#3e3e3e] transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="w-16 h-10 bg-black rounded overflow-hidden flex items-center justify-center border border-[#444] flex-shrink-0">
+                          {rec.thumbnailUrl ? (
+                            <img src={rec.thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+                          ) : (
+                            <Film className="w-5 h-5 text-slate-500" />
+                          )}
                         </div>
-                        <div className="text-[10px] text-slate-400 flex items-center space-x-2">
-                          <span>{rec.date}</span>
-                          <span>•</span>
-                          <span>Duration: {formatDurationSimple(rec.durationSeconds)}</span>
-                          <span>•</span>
-                          <span>Size: {rec.fileSizeFormatted}</span>
-                          <span>•</span>
-                          <span className="text-cyan-400 uppercase font-mono">{rec.sourceType}</span>
-                        </div>
-                        {rec.savedFilePath && (
-                          <div className="text-[9.5px] text-emerald-400 truncate max-w-sm mt-0.5">
-                            ✓ Saved to: {rec.savedFilePath}
+                        <div>
+                          <div className="font-semibold text-white text-[12px] flex items-center space-x-1.5">
+                            <span>{rec.title}.{ext}</span>
+                            <span className="text-[9px] bg-blue-900/60 text-blue-300 px-1 py-0.2 rounded font-mono uppercase">{ext}</span>
                           </div>
+                          <div className="text-[10px] text-slate-400 flex items-center space-x-2">
+                            <span>{rec.date}</span>
+                            <span>•</span>
+                            <span>Duration: {formatDurationSimple(rec.durationSeconds)}</span>
+                            <span>•</span>
+                            <span>Size: {rec.fileSizeFormatted}</span>
+                            <span>•</span>
+                            <span className="text-cyan-400 uppercase font-mono">{rec.sourceType}</span>
+                          </div>
+                          {rec.savedFilePath && (
+                            <div className="text-[9.5px] text-emerald-400 truncate max-w-sm mt-0.5">
+                              ✓ Saved to: {rec.savedFilePath}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => setActivePlayingItem(rec)}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium flex items-center space-x-1 shadow"
+                          title="Play in viewer"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Play</span>
+                        </button>
+
+                        {rec.savedFilePath && (
+                          <button
+                            onClick={() => handleShowFileInFolder(rec.savedFilePath)}
+                            className="px-2.5 py-1 bg-[#383838] hover:bg-[#484848] text-amber-300 rounded font-medium flex items-center space-x-1 border border-[#555]"
+                            title="Show in Windows Explorer"
+                          >
+                            <FolderOpen className="w-3 h-3" />
+                            <span>Folder</span>
+                          </button>
                         )}
+
+                        <a
+                          href={rec.url}
+                          download={`${rec.title}.${ext}`}
+                          className="px-2.5 py-1 bg-[#404040] hover:bg-[#505050] text-slate-200 rounded font-medium flex items-center space-x-1 border border-[#555]"
+                          title="Download video file"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Save {ext?.toUpperCase()}</span>
+                        </a>
+
+                        <button
+                          onClick={() => onDeleteRecording(rec.id)}
+                          className="p-1 hover:bg-red-950/60 hover:text-red-400 text-slate-400 rounded transition-colors"
+                          title="Delete recording"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        onClick={() => setActivePlayingItem(rec)}
-                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium flex items-center space-x-1 shadow"
-                        title="Play in viewer"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Play</span>
-                      </button>
-
-                      {rec.savedFilePath && (
-                        <button
-                          onClick={() => handleShowFileInFolder(rec.savedFilePath)}
-                          className="px-2.5 py-1 bg-[#383838] hover:bg-[#484848] text-amber-300 rounded font-medium flex items-center space-x-1 border border-[#555]"
-                          title="Show in Windows Explorer"
-                        >
-                          <FolderOpen className="w-3 h-3" />
-                          <span>Folder</span>
-                        </button>
-                      )}
-
-                      <a
-                        href={rec.url}
-                        download={`${rec.title}.mkv`}
-                        className="px-2.5 py-1 bg-[#404040] hover:bg-[#505050] text-slate-200 rounded font-medium flex items-center space-x-1 border border-[#555]"
-                        title="Download MKV file"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span>Save MKV</span>
-                      </a>
-
-                      <button
-                        onClick={() => onDeleteRecording(rec.id)}
-                        className="p-1 hover:bg-red-950/60 hover:text-red-400 text-slate-400 rounded transition-colors"
-                        title="Delete recording"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           ) : (

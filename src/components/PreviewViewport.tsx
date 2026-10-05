@@ -154,7 +154,7 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
             </div>
             <p className="text-xs text-slate-400 max-w-md">
               {source === 'screen'
-                ? 'Select a screen, window, or entire desktop to display real-time capture preview.'
+                ? 'Strict full screen capture mode active. Full screen is captured directly without asking to select windows.'
                 : 'Connect your webcam to start camera preview and recording.'}
             </p>
 
@@ -165,7 +165,7 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
                   className="flex items-center space-x-2 px-4 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded text-xs font-medium shadow-lg transition-transform hover:scale-105 active:scale-95"
                 >
                   <Monitor className="w-4 h-4" />
-                  <span>Select Screen / Desktop</span>
+                  <span>Capture Full Screen</span>
                 </button>
               ) : (
                 <button
@@ -195,9 +195,9 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
           </div>
         )}
 
-        {/* GNOA Software Watermark in bottom right corner (Screenshot 1, 2, 3) */}
+        {/* GNOA Vlogo Watermark bottom right corner */}
         <div className="absolute right-4 bottom-2 select-none opacity-40 hover:opacity-75 transition-opacity flex flex-col items-end pointer-events-none">
-          <img src="/logo.png" alt="Logo" className="h-10 object-contain drop-shadow-md" />
+          <img src="/Vlogo.png" alt="GNOA Logo" className="h-10 object-contain drop-shadow-md" />
         </div>
       </div>
 

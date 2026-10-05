@@ -1,12 +1,5 @@
-/**
- * GNOA Recording Suit
- * Professional Screen, Webcam, System Sound & Audio Recording Application
- * Works with Laptop (Windows) and Mac OS as a lightweight background application.
- */
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  OSType,
   ActiveTab,
   CaptureSource,
   ScreenSelectionMode,
@@ -29,8 +22,7 @@ import { RecordingsModal } from './components/RecordingsModal';
 import { BackgroundTrayWidget } from './components/BackgroundTrayWidget';
 
 export default function App() {
-  // OS & Layout state
-  const [os, setOs] = useState<OSType>('windows');
+  // Layout state
   const [isMaximized, setIsMaximized] = useState(false);
   const [isMinimizedToTray, setIsMinimizedToTray] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -40,6 +32,8 @@ export default function App() {
   const [optionsModalOpen, setOptionsModalOpen] = useState(false);
   const [optionsInitialTab, setOptionsInitialTab] = useState<string>('video');
   const [recordingsModalOpen, setRecordingsModalOpen] = useState(false);
+  const [sourcePickerModalOpen, setSourcePickerModalOpen] = useState(false);
+  const [availableSources, setAvailableSources] = useState<any[]>([]);
   const [lastRecordedItem, setLastRecordedItem] = useState<RecordingItem | null>(null);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
 
@@ -61,7 +55,10 @@ export default function App() {
     try {
       const saved = localStorage.getItem('gnoa_settings');
       if (saved) {
-        return { ...defaultSettings, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        // Force webcam overlay to OFF by default as per user request
+        parsed.showWebcamOverlay = false; 
+        return { ...defaultSettings, ...parsed };
       }
     } catch (e) {
       console.warn('Could not read settings from localStorage:', e);
@@ -145,20 +142,27 @@ export default function App() {
   const countdownIntervalRef = useRef<number | null>(null);
   const isSplittingRef = useRef(false);
   const activeCombinedStreamRef = useRef<MediaStream | null>(null);
+  const currentMimeRef = useRef<string>('video/mp4');
+  const currentExtRef = useRef<string>('mp4');
   const recordingsCountRef = useRef(recordings.length);
 
   useEffect(() => {
     recordingsCountRef.current = recordings.length;
   }, [recordings.length]);
 
-  // --- Real Audio VU Meter Loop ---
+  // --- Real Audio VU Meter Loop (throttled to ~15 fps to save CPU on old laptops) ---
   useEffect(() => {
-    const updateMeter = () => {
-      if (settings.onlyShowDbDuringRecord && recordingState !== 'recording') {
-        setDbLevel(-42);
-      } else {
-        const lvl = audioEngine.getDecibelLevel();
-        setDbLevel(lvl);
+    let lastTick = 0;
+    const updateMeter = (timestamp: number) => {
+      // Only update ~15 times per second (every ~66ms) to reduce CPU usage
+      if (timestamp - lastTick >= 66) {
+        lastTick = timestamp;
+        if (settings.onlyShowDbDuringRecord && recordingState !== 'recording') {
+          setDbLevel(-42);
+        } else {
+          const lvl = audioEngine.getDecibelLevel();
+          setDbLevel(lvl);
+        }
       }
       vuAnimationFrameRef.current = requestAnimationFrame(updateMeter);
     };
@@ -187,54 +191,64 @@ export default function App() {
     }
   }, [settings.recordMicrophone, settings.microphoneDeviceId, micStream, screenStream]);
 
-  // --- Start Screen Capture (Screen + System Sound) ---
-  const handleStartScreenCapture = async () => {
+  // --- Start Screen Capture (Screen, Window, System Sound) ---
+  const handleStartScreenCapture = async (sourceId?: string) => {
     try {
-      let displayStream: MediaStream;
+      let displayStream: MediaStream | null = null;
+      const targetFps = settings.frameRate || 15;
 
       if ((window as any).require) {
         try {
           const { ipcRenderer } = (window as any).require('electron');
-          const sources = await ipcRenderer.invoke('get-desktop-sources');
-          if (sources && sources.length > 0) {
-            const screenSource = sources[0]; // just pick the primary screen for now
-            displayStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                }
-              },
-              video: {
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                  chromeMediaSourceId: screenSource.id,
-                  minFrameRate: settings.frameRate,
-                  maxFrameRate: settings.frameRate
-                }
-              }
-            } as any);
-          } else {
-            throw new Error('No desktop sources found');
+          
+          let targetSourceId = sourceId;
+
+          // If no specific source selected, auto-select primary screen
+          if (!targetSourceId) {
+            const sources = await ipcRenderer.invoke('get-desktop-sources', ['screen']);
+            const screenSources = sources ? sources.filter((s: any) => s.id.startsWith('screen:')) : [];
+            if (screenSources && screenSources.length > 0) {
+              const primaryScreen = screenSources.find((s: any) => s.id.includes('screen:0') || s.name.toLowerCase().includes('entire') || s.name.toLowerCase().includes('screen 1')) || screenSources[0];
+              targetSourceId = primaryScreen.id;
+            }
           }
-        } catch (err) {
-          console.warn('Electron IPC capture failed, falling back to standard getDisplayMedia', err);
-          displayStream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              frameRate: settings.frameRate,
-            },
-            audio: settings.recordSpeakers,
-          });
+
+          if (targetSourceId) {
+            // In Electron, getUserMedia with chromeMediaSourceId captures screen/window directly without prompt
+            try {
+              displayStream = await navigator.mediaDevices.getUserMedia({
+                audio: false, // We handle system audio separately via getDisplayMedia if needed, or via loopback if supported, but usually window audio requires getDisplayMedia loopback or just mix mic. We'll stick to video here.
+                video: {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: targetSourceId,
+                    minFrameRate: targetFps,
+                    maxFrameRate: targetFps,
+                  }
+                }
+              } as any);
+            } catch (gumErr) {
+              console.warn('getUserMedia direct screen failed, will use getDisplayMedia with auto-screen handler:', gumErr);
+            }
+          }
+        } catch (ipcErr) {
+          console.warn('IPC get-desktop-sources error:', ipcErr);
         }
-      } else {
+      }
+
+      // If not initialized yet, use getDisplayMedia
+      if (!displayStream) {
         displayStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            frameRate: settings.frameRate,
+            frameRate: { ideal: targetFps, max: 60 },
           },
           audio: settings.recordSpeakers,
         });
       }
 
-      // Handle stream end when user clicks "Stop Sharing" from browser native banner
+      if (!displayStream) return null;
+
+      // Handle stream end when user clicks "Stop Sharing" from native banner
       displayStream.getVideoTracks()[0].onended = () => {
         handleStopRecording();
         setScreenStream(null);
@@ -242,6 +256,7 @@ export default function App() {
 
       setScreenStream(displayStream);
       setSource('screen');
+
 
       // Connect screen system audio tracks + mic
       audioEngine.connectStreams(micStream, displayStream);
@@ -299,40 +314,52 @@ export default function App() {
   };
 
   // --- Fix Duration & Save Recording Blob ---
+  // --- Fix Duration & Save Recording Blob ---
   const saveAndRegisterRecording = async (
     rawBlob: Blob,
     durationMs: number,
-    restoreWindow: boolean
+    restoreWindow: boolean,
+    fileExt: string = 'mp4'
   ) => {
-    // Fix WebM/MKV container duration header so laptop players (Windows Media Player, Movies & TV, Chrome)
-    // show duration and seekable timeline properly
     const durationMsValid = Math.max(500, Math.round(durationMs));
     let finalBlob: Blob = rawBlob;
-    try {
-      finalBlob = await new Promise<Blob>((resolve) => {
-        fixWebmDuration(rawBlob, durationMsValid, (fixed) => {
-          resolve(fixed);
-        }, { logger: false });
-        setTimeout(() => resolve(rawBlob), 1500);
-      });
-    } catch (err) {
-      console.warn('fixWebmDuration note:', err);
-      finalBlob = rawBlob;
+
+    // Apply fixWebmDuration ONLY for webm/mkv formats (never on mp4)
+    if (fileExt === 'webm' || (fileExt === 'mkv' && rawBlob.type.includes('webm'))) {
+      try {
+        finalBlob = await new Promise<Blob>((resolve) => {
+          let resolved = false;
+          // Safety timeout – if fixWebmDuration takes >2s, use rawBlob
+          const timeout = setTimeout(() => {
+            if (!resolved) { resolved = true; resolve(rawBlob); }
+          }, 2000);
+          fixWebmDuration(rawBlob, durationMsValid, (fixed) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timeout);
+              resolve(fixed);
+            }
+          }, { logger: false });
+        });
+      } catch (err) {
+        console.warn('fixWebmDuration note:', err);
+        finalBlob = rawBlob;
+      }
     }
 
     const url = URL.createObjectURL(finalBlob);
     const now = new Date();
     const durationSec = Math.max(1, Math.round(durationMsValid / 1000));
 
-    // Generate filename based on template - MKV format (Issue #5)
+    // Generate filename based on date, time and selected extension (e.g. .mp4, .mkv, .webm)
     const dateFormatted = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     const timeFormatted = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
     const autoNumber = (recordingsCountRef.current + 1).toString().padStart(3, '0');
     recordingsCountRef.current += 1;
     const title = `GNOA_${dateFormatted}_${timeFormatted}_${autoNumber}`;
-    const fileName = `${title}.mkv`;
+    const fileName = `${title}.${fileExt}`;
 
-    // Auto-save recording directly into user's desired destination folder (Issue #7)
+    // Auto-save recording directly into user's desired destination folder
     let savedFilePath = '';
     if ((window as any).require) {
       try {
@@ -377,14 +404,18 @@ export default function App() {
 
     if (restoreWindow) {
       setRecordingState('idle');
+      // Auto-reset elapsed time so timer resets for the new recording!
+      setElapsedMs(0);
+      startTimeRef.current = 0;
+      pausedElapsedRef.current = 0;
 
-      // Show Debut-style notification (Issue #3)
+      // Show Debut-style notification
       if (!settings.disablePlayVideoNotification) {
         setShowSuccessBanner(true);
         try {
           if ('Notification' in window) {
             new Notification('Done!', {
-              body: `your recording has been finished`,
+              body: `Your recording has been saved as ${fileName}`,
             });
           }
         } catch (e) {
@@ -409,20 +440,51 @@ export default function App() {
   const startRecordingOnStream = (combinedStream: MediaStream) => {
     activeCombinedStreamRef.current = combinedStream;
 
-    // Determine mimeType prioritizing MKV
-    const mimeTypes = [
-      'video/x-matroska;codecs=avc1,opus',
-      'video/x-matroska;codecs=vp9,opus',
-      'video/x-matroska',
-      'video/webm;codecs=vp9,opus',
-      'video/webm',
-      'video/mp4',
-    ];
-    const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/x-matroska';
+    // Determine format, MIME type and file extension based on user selected setting
+    const format = settings.outputFormat || 'mp4';
+    let selectedMime = '';
+    let ext = 'mp4';
 
+    if (format === 'mp4') {
+      const mp4Options = [
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4;codecs=avc1,opus',
+        'video/mp4;codecs=avc1',
+        'video/mp4',
+        'video/webm;codecs=h264',
+        'video/webm',
+      ];
+      selectedMime = mp4Options.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/mp4';
+      ext = 'mp4';
+    } else if (format === 'mkv') {
+      const mkvOptions = [
+        'video/x-matroska;codecs=avc1,opus',
+        'video/x-matroska;codecs=vp9,opus',
+        'video/x-matroska',
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+      ];
+      selectedMime = mkvOptions.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+      ext = 'mkv';
+    } else {
+      const webmOptions = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=h264',
+        'video/webm',
+      ];
+      selectedMime = webmOptions.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+      ext = 'webm';
+    }
+
+    currentMimeRef.current = selectedMime;
+    currentExtRef.current = ext;
+
+    // High bitrate (6 Mbps video, 128 kbps audio) for smooth crisp video playback
     const recorder = new MediaRecorder(combinedStream, {
       mimeType: selectedMime,
-      videoBitsPerSecond: 3000000,
+      videoBitsPerSecond: 6000000,
+      audioBitsPerSecond: 128000,
     });
 
     recordedChunksRef.current = [];
@@ -441,8 +503,12 @@ export default function App() {
           timerIntervalRef.current = null;
         }
         const finalDuration = Date.now() - startTimeRef.current + pausedElapsedRef.current;
-        const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
-        saveAndRegisterRecording(rawBlob, finalDuration, true);
+        const rawBlob = new Blob(recordedChunksRef.current, { type: selectedMime });
+        // Auto reset timer immediately for new recording
+        setElapsedMs(0);
+        startTimeRef.current = 0;
+        pausedElapsedRef.current = 0;
+        saveAndRegisterRecording(rawBlob, finalDuration, true, ext);
       }
     };
 
@@ -461,24 +527,28 @@ export default function App() {
       const currentElapsed = now - startTimeRef.current + pausedElapsedRef.current;
       setElapsedMs(currentElapsed);
 
-      // Check user-configured recording limit (requirement: "recording stop automatic when hit my set time and start again")
+      // Check user-configured recording limit
       if (settings.limitMaxRecordingTime && settings.maxRecordingTimeSeconds > 0) {
         if (currentElapsed >= settings.maxRecordingTimeSeconds * 1000) {
           if (settings.onMaxTimeReached === 'stop') {
             handleStopRecording();
           } else {
             // Auto split & continue seamlessly
-            handleSegmentSplit();
+            handleSegmentSplit(selectedMime, ext);
           }
         }
       }
-    }, 50);
+    }, 100); // 100ms is accurate enough for display and saves CPU
+
   };
 
   // --- Handle Time Limit Hit: Auto Split & Continue Recording ---
-  const handleSegmentSplit = async () => {
+  const handleSegmentSplit = async (activeMime?: string, activeExt?: string) => {
     if (isSplittingRef.current) return;
     isSplittingRef.current = true;
+
+    const mime = activeMime || currentMimeRef.current || 'video/mp4';
+    const ext = activeExt || currentExtRef.current || 'mp4';
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -495,9 +565,9 @@ export default function App() {
       });
     }
 
-    const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
+    const rawBlob = new Blob(recordedChunksRef.current, { type: mime });
     // Save segment without restoring window
-    await saveAndRegisterRecording(rawBlob, segmentDuration, false);
+    await saveAndRegisterRecording(rawBlob, segmentDuration, false, ext);
 
     if (settings.soundRecordToneInterval) {
       audioEngine.playTone(880, 0.1);
@@ -585,7 +655,7 @@ export default function App() {
           compositeFrame();
           
           try {
-            const canvasStream = canvas.captureStream(settings.frameRate);
+            const canvasStream = canvas.captureStream(settings.frameRate || 15);
             finalVideoTracks = canvasStream.getVideoTracks();
           } catch (e) {
             console.warn('Canvas capture stream failed', e);
@@ -701,6 +771,11 @@ export default function App() {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+
+    // Auto reset elapsed timer immediately for new recording
+    setElapsedMs(0);
+    startTimeRef.current = 0;
+    pausedElapsedRef.current = 0;
 
     if (settings.soundRecordToneStop) {
       audioEngine.playTone(440, 0.2); // Stop beep
@@ -878,6 +953,11 @@ export default function App() {
     initAudioStreams();
   }, [initAudioStreams]);
 
+  // Strictly auto-initialize primary screen capture on launch without asking to select window
+  useEffect(() => {
+    handleStartScreenCapture();
+  }, []);
+
   return (
     <div
       className={`w-screen h-screen flex flex-col bg-[#1e1e1e] text-slate-100 select-none overflow-hidden font-sans ${
@@ -887,27 +967,24 @@ export default function App() {
       {/* If Minimized to Tray (Background Application Mode) */}
       {isMinimizedToTray ? (
         <BackgroundTrayWidget
-          os={os}
           recordingState={recordingState}
           elapsedMs={elapsedMs}
           onRestore={() => setIsMinimizedToTray(false)}
           onRecord={handleRecord}
           onPause={handlePause}
           onStop={handleStopRecording}
-          onToggleOs={() => setOs((prev) => (prev === 'windows' ? 'macos' : 'windows'))}
         />
       ) : (
         /* Full GNOA Application Main Window */
         <div className="flex-1 flex flex-col bg-[#1e1e1e] h-full overflow-hidden border border-[#333]">
           {/* 1. Window Title Bar */}
           <TitleBar
-            os={os}
-            onToggleOs={() => setOs((prev) => (prev === 'windows' ? 'macos' : 'windows'))}
             onMinimizeToTray={() => setIsMinimizedToTray(true)}
             onClose={() => setIsMinimizedToTray(true)}
             isMaximized={isMaximized}
             onToggleMaximize={() => setIsMaximized(!isMaximized)}
           />
+
 
           {/* 2. Menu Bar (File, Effects, Screen Capture, View, Tools, Help) */}
           <MenuBar
@@ -924,6 +1001,15 @@ export default function App() {
             onSelectScreenMode={(mode) => setScreenSelectionMode(mode)}
             onToggleWebcamOverlay={handleToggleWebcamOverlay}
             webcamOverlayActive={settings.showWebcamOverlay}
+            onOpenSourcePicker={async () => {
+              setAvailableSources([]);
+              setSourcePickerModalOpen(true);
+              if ((window as any).require) {
+                const { ipcRenderer } = (window as any).require('electron');
+                const sources = await ipcRenderer.invoke('get-desktop-sources', ['window', 'screen']);
+                setAvailableSources(sources || []);
+              }
+            }}
           />
 
           {/* 3. Ribbon Tab Bar (Menu, Home, Effects, Options, Help, Suite) */}
@@ -956,6 +1042,15 @@ export default function App() {
                 setRecordingsModalOpen(true);
               } else {
                 alert('No recording yet to share. Please record a video first.');
+              }
+            }}
+            onOpenSourcePicker={async () => {
+              setAvailableSources([]);
+              setSourcePickerModalOpen(true);
+              if ((window as any).require) {
+                const { ipcRenderer } = (window as any).require('electron');
+                const sources = await ipcRenderer.invoke('get-desktop-sources', ['window', 'screen']);
+                setAvailableSources(sources || []);
               }
             }}
           />
@@ -994,6 +1089,7 @@ export default function App() {
             }}
             onOpenRecordingsFolder={() => handleShowInFolder()}
             onShowInFolder={handleShowInFolder}
+            onSelectFormat={(fmt) => handleSaveSettings({ ...settings, outputFormat: fmt })}
             lastRecordedItem={lastRecordedItem}
             audioActive={settings.recordMicrophone || settings.recordSpeakers}
           />
@@ -1020,6 +1116,48 @@ export default function App() {
         onDeleteSnapshot={(id) => setSnapshots((prev) => prev.filter((s) => s.id !== id))}
         initialPlayItem={lastRecordedItem}
       />
+
+      {/* Source Picker Modal (For selecting specific window/app) */}
+      {sourcePickerModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+          <div className="bg-[#1e1e1e] border border-[#333] rounded-lg shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-h-[85vh]">
+            <div className="flex justify-between items-center p-3 border-b border-[#333] bg-[#242424]">
+              <h2 className="text-sm font-semibold">Select Screen or Window to Record</h2>
+              <button onClick={() => setSourcePickerModalOpen(false)} className="text-slate-400 hover:text-white px-2">&times;</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 bg-[#121212]">
+              {availableSources.length === 0 ? (
+                <div className="text-center text-slate-400 py-10">Loading available windows...</div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {availableSources.map(s => (
+                    <div 
+                      key={s.id} 
+                      onClick={() => {
+                        setSourcePickerModalOpen(false);
+                        handleStartScreenCapture(s.id);
+                      }}
+                      className="bg-[#242424] border border-[#333] rounded hover:border-cyan-500 cursor-pointer overflow-hidden group flex flex-col transition-colors"
+                    >
+                      <div className="h-28 bg-[#000] flex items-center justify-center overflow-hidden">
+                        {s.thumbnail ? (
+                          <img src={s.thumbnail} alt={s.name} className="object-contain w-full h-full group-hover:scale-105 transition-transform" />
+                        ) : (
+                          <span className="text-slate-500">No Preview</span>
+                        )}
+                      </div>
+                      <div className="p-2 text-xs truncate flex items-center space-x-2">
+                        {s.appIcon && <img src={s.appIcon} alt="" className="w-4 h-4" />}
+                        <span className="truncate flex-1">{s.name}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

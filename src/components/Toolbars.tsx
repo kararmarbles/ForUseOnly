@@ -11,6 +11,7 @@ interface ToolbarsProps {
   onOpenRecordings: () => void;
   onOpenOptions: (tab?: string) => void;
   onOpenShare: () => void;
+  onOpenSourcePicker?: () => void;
 }
 
 export const Toolbars: React.FC<ToolbarsProps> = ({
@@ -23,6 +24,7 @@ export const Toolbars: React.FC<ToolbarsProps> = ({
   onOpenRecordings,
   onOpenOptions,
   onOpenShare,
+  onOpenSourcePicker,
 }) => {
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
   const screenMenuRef = useRef<HTMLDivElement>(null);
@@ -85,21 +87,24 @@ export const Toolbars: React.FC<ToolbarsProps> = ({
                     onSelectScreenMode('entire');
                     setScreenMenuOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-[#2563eb] hover:text-white transition-colors flex items-center space-x-2"
+                  className="w-full text-left px-3 py-2 hover:bg-[#2563eb] hover:text-white transition-colors flex items-center justify-between"
                 >
-                  <span className="text-slate-400">🖥️</span>
-                  <span>Select the entire virtual desktop</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-400">🖥️</span>
+                    <span>Strict Full Virtual Screen (No window prompt)</span>
+                  </div>
+                  <span className="text-cyan-400 font-bold text-[10px]">Strict</span>
                 </button>
                 <button
                   onClick={() => {
                     onSelectSource('screen');
-                    onSelectScreenMode('window');
+                    if (onOpenSourcePicker) onOpenSourcePicker();
                     setScreenMenuOpen(false);
                   }}
                   className="w-full text-left px-3 py-2 hover:bg-[#2563eb] hover:text-white transition-colors flex items-center space-x-2"
                 >
                   <span className="text-slate-400">🪟</span>
-                  <span>Select the window under the mouse cursor</span>
+                  <span>Select specific Application / Window</span>
                 </button>
                 <button
                   onClick={() => {

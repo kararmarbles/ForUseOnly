@@ -1,6 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { RecordingState, ScreenSelectionMode } from '../types';
 
+// ── Version helper ──────────────────────────────────────────────────────────
+// Read from package.json (vite injects import.meta.env, or fall back to '1.0.1')
+const APP_VERSION: string = (() => {
+  try {
+    // In Electron renderer, ask main process for the real version
+    if ((window as any).require) {
+      // Synchronous IPC not available for invoke; we'll load async below
+      return '1.0.1';
+    }
+  } catch { /* ignore */ }
+  return '1.0.1';
+})();
+
 interface MenuBarProps {
   recordingState: RecordingState;
   onRecord: () => void;
@@ -12,6 +25,7 @@ interface MenuBarProps {
   onSelectScreenMode: (mode: ScreenSelectionMode) => void;
   onToggleWebcamOverlay: () => void;
   webcamOverlayActive: boolean;
+  onOpenSourcePicker?: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
@@ -28,7 +42,21 @@ export const MenuBar: React.FC<MenuBarProps> = ({
 }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [appVersion, setAppVersion] = useState<string>(APP_VERSION);
 
+  // Load real version from Electron main process (or keep fallback)
+  useEffect(() => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.invoke('get-app-version').then((v: string) => {
+          if (v) setAppVersion(v);
+        }).catch(() => {/* ignore */});
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  // Close menu when clicking outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -169,15 +197,16 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-0.5 w-60 bg-[#2d2d2d] border border-[#444] rounded shadow-xl py-1 text-slate-200 z-50 text-xs">
             <button
               onClick={() => { onSelectScreenMode('entire'); setOpenMenu(null); }}
-              className="w-full text-left px-3 py-1.5 hover:bg-[#3b82f6] hover:text-white"
+              className="w-full text-left px-3 py-1.5 hover:bg-[#3b82f6] hover:text-white flex items-center justify-between"
             >
-              Select the entire virtual desktop
+              <span>Select the entire virtual desktop (Strict Full Screen)</span>
+              <span className="text-cyan-400 font-bold text-[10px]">✓ Strict</span>
             </button>
             <button
-              onClick={() => { onSelectScreenMode('window'); setOpenMenu(null); }}
+              onClick={() => { if (onOpenSourcePicker) onOpenSourcePicker(); setOpenMenu(null); }}
               className="w-full text-left px-3 py-1.5 hover:bg-[#3b82f6] hover:text-white"
             >
-              Select the window under the mouse cursor
+              Select specific Application / Window
             </button>
             <button
               onClick={() => { onSelectScreenMode('rectangle'); setOpenMenu(null); }}
@@ -272,10 +301,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         {openMenu === 'help' && (
           <div className="absolute left-0 top-full mt-0.5 w-56 bg-[#2d2d2d] border border-[#444] rounded shadow-xl py-1 text-slate-200 z-50 text-xs">
             <div className="px-3 py-1.5 font-semibold text-white border-b border-[#404040]">
-              GNOA Recording Suit v9.36
+              GNOA Recording Suit v{appVersion}
             </div>
             <div className="px-3 py-1 text-[11px] text-slate-300">
-              For Laptop & Mac OS background recording
+              Professional Laptop Screen Recording Software
             </div>
             <div className="px-3 py-1 text-[11px] text-green-400">
               Licensed Professional Edition
@@ -289,27 +318,28 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                     const { ipcRenderer } = (window as any).require('electron');
                     const res = await ipcRenderer.invoke('check-for-updates');
                     if (res && res.error) {
-                      alert(`Update Check:\nYou are running version v1.0.0.\n\nAutomatic updates check your GitHub Releases. When you publish a newer release (e.g. v1.0.1) on GitHub, the app will detect and install it automatically.`);
+                      alert(`Update Check:\nYou are running version v${appVersion}.\n\nAutomatic updates check GitHub Releases. When a newer release is published, the app will detect and install it automatically.`);
                     } else if (res && res.dev) {
-                      alert(`Update check: Running in development mode. Version v1.0.0 is active.`);
+                      alert(`Update check: Running in development mode. Version v${appVersion} is active.`);
                     } else {
-                      alert(`Update Check:\nVersion v1.0.0 is up to date.\nWhen a new release (e.g. v1.0.1) is published on GitHub, the software will update automatically.`);
+                      alert(`Update Check:\nVersion v${appVersion} is up to date.\nWhen a new release is published on GitHub, the software will update automatically.`);
                     }
                   } catch (e) {
-                    alert(`Update Check: You are running version v1.0.0.`);
+                    alert(`Update Check: You are running version v${appVersion}.`);
                   }
                 } else {
-                  alert(`Update status: You are running the latest version (v1.0.0).`);
+                  alert(`Update status: You are running the latest version (v${appVersion}).`);
                 }
               }}
               className="w-full text-left px-3 py-1.5 hover:bg-[#3b82f6] hover:text-white flex items-center justify-between"
             >
               <span>Check for Updates...</span>
-              <span className="text-[10px] text-cyan-400 font-mono">v1.0.0</span>
+              <span className="text-[10px] text-cyan-400 font-mono">v{appVersion}</span>
             </button>
           </div>
         )}
       </div>
     </div>
+
   );
 };

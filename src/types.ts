@@ -32,6 +32,7 @@ export interface AppSettings {
   toneIntervalSeconds: number;
 
   // Output
+  outputFormat: 'mp4' | 'mkv' | 'webm';
   warnLowDiskSpace: number;
   overwriteOldRecordings: boolean;
   destinationFolder: string;

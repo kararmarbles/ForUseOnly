@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { RecordingState, AppSettings } from '../types';
 import { Camera, Volume2 } from 'lucide-react';
 import { formatTime } from '../utils/helpers';
@@ -17,6 +17,7 @@ interface BottomControlDockProps {
   onPlayLastRecording: () => void;
   onOpenRecordingsFolder: () => void;
   onShowInFolder?: (filePath?: string) => void;
+  onSelectFormat?: (format: 'mp4' | 'mkv' | 'webm') => void;
   lastRecordedItem?: any;
   audioActive: boolean;
 }
@@ -35,6 +36,7 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   onPlayLastRecording,
   onOpenRecordingsFolder,
   onShowInFolder,
+  onSelectFormat,
   lastRecordedItem,
   audioActive,
 }) => {
@@ -42,21 +44,43 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   const isPaused = recordingState === 'paused';
   const isIdle = recordingState === 'idle';
 
+  // Dynamic version from Electron main process
+  const [appVersion, setAppVersion] = useState('1.0.1');
+  useEffect(() => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.invoke('get-app-version').then((v: string) => {
+          if (v) setAppVersion(v);
+        }).catch(() => {/* ignore */});
+      } catch { /* ignore */ }
+    }
+  }, []);
+
   // Calculate VU meter percentage from dbLevel (-42 dB to +12 dB = 54 dB total range)
   const clampedDb = Math.max(-42, Math.min(12, dbLevel));
   const vuPercent = Math.min(100, Math.max(0, ((clampedDb + 42) / 54) * 100));
 
+  // Status indicator
+  const statusText = isRecording ? 'Recording' : isPaused ? 'Paused' : 'Ready';
+  const statusColor = isRecording ? 'text-red-400' : isPaused ? 'text-amber-400' : 'text-emerald-400';
+
   return (
     <div className="flex flex-col bg-[#383838] border-t border-[#484848] select-none shadow-md">
-      {/* Authentic NCH Debut-style Recording Complete Notification Banner */}
+      {/* Recording Complete Notification Banner */}
       {showSuccessBanner && (
         <div className="bg-[#2e7d32] border-b border-[#1b5e20] text-white px-4 py-2 flex items-center justify-between text-xs font-sans shadow-lg transition-all animate-fadeIn">
           <div className="flex items-center space-x-3 truncate">
             <span className="bg-[#1b5e20] text-emerald-200 text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wide uppercase">
-              DEBUT NOTIFICATION
+              GNOA NOTIFICATION
             </span>
             <span className="font-semibold text-white drop-shadow">
-              Recording complete: <span className="font-mono text-amber-200">{lastRecordedItem ? `${lastRecordedItem.title}.mkv` : 'Video.mkv'}</span>
+              Recording complete:{' '}
+              <span className="font-mono text-amber-200">
+                {lastRecordedItem
+                  ? `${lastRecordedItem.title}.${lastRecordedItem.savedFilePath ? lastRecordedItem.savedFilePath.split('.').pop() : (settings.outputFormat || 'mp4')}`
+                  : `Video.${settings.outputFormat || 'mp4'}`}
+              </span>
             </span>
             <span className="text-emerald-200 text-[11px] truncate max-w-xs opacity-90">
               Auto-saved to: {lastRecordedItem?.savedFilePath || settings.destinationFolder}
@@ -91,7 +115,7 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
 
       {/* Main Control Strip */}
       <div className="h-16 px-4 flex items-center justify-between bg-[#383838]">
-        {/* Left Section: Transport buttons and VU meter dock */}
+        {/* Left: Transport buttons + VU meter */}
         <div className="flex items-center space-x-1.5">
           {/* Record Button */}
           <button
@@ -108,7 +132,7 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
               className={`w-6 h-6 rounded-full transition-transform ${
                 isRecording
                   ? 'bg-red-600 animate-pulse scale-90'
-                  : 'bg-gradient-to-br from-red-500 to-red-700 shadow-md group-hover:scale-105'
+                  : 'bg-gradient-to-br from-red-500 to-red-700 shadow-md'
               }`}
             />
           </button>
@@ -146,28 +170,36 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
             <div className="w-5 h-5 bg-slate-300 rounded-xs" />
           </button>
 
-          {/* Audio VU Meter & Timer Section (Authentic NCH Debut style) */}
+          {/* Audio VU Meter & Timer */}
           <div className="flex items-center bg-[#242424] border border-[#1b1b1b] rounded-sm px-2.5 py-1 ml-2 min-w-[280px] h-12">
-            {/* Speaker Icon */}
-            <div className="mr-2 text-slate-300">
+            <div className="mr-2">
               <Volume2 className={`w-5 h-5 ${audioActive ? 'text-green-400' : 'text-slate-400'}`} />
             </div>
 
-            {/* Meter and Timer stack */}
             <div className="flex-1 flex flex-col justify-center">
-              {/* Top row: Timer & FPS */}
+              {/* Timer + FPS + Format */}
               <div className="flex items-center justify-between text-[11px] font-mono text-slate-200 leading-none mb-1">
                 <span className={`tracking-wider ${isRecording ? 'text-green-400 font-bold' : 'text-slate-300'}`}>
                   {formatTime(elapsedMs)}
                 </span>
-                <span className="text-[10px] text-slate-400 font-sans">
-                  {settings.frameRate} fps
-                </span>
+                <div className="flex items-center space-x-1.5 font-sans">
+                  <span className="text-[10px] text-slate-400">{settings.frameRate} fps</span>
+                  <select
+                    value={settings.outputFormat || 'mp4'}
+                    onChange={(e) => onSelectFormat && onSelectFormat(e.target.value as any)}
+                    disabled={isRecording}
+                    className="bg-[#181818] border border-[#555] rounded px-1 text-[9.5px] text-cyan-400 font-bold font-mono uppercase cursor-pointer hover:border-cyan-400 focus:outline-none disabled:opacity-50"
+                    title="Select Recording File Format"
+                  >
+                    <option value="mp4">MP4</option>
+                    <option value="mkv">MKV</option>
+                    <option value="webm">WEBM</option>
+                  </select>
+                </div>
               </div>
 
               {/* VU Meter Bar */}
-              <div className="w-full h-2 bg-[#151515] rounded-xs overflow-hidden relative border border-[#333]">
-                {/* Active Level Fill */}
+              <div className="w-full h-2 bg-[#151515] rounded-xs overflow-hidden border border-[#333]">
                 <div
                   className="h-full transition-all duration-75 ease-out"
                   style={{
@@ -177,15 +209,10 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
                 />
               </div>
 
-              {/* dB Scale Markings (Authentic: -42, -36, -30, -24, -18, -12, -6, 0, 6, 12) */}
+              {/* dB Scale */}
               <div className="flex justify-between text-[7.5px] text-slate-400 mt-0.5 font-mono select-none px-0.5">
-                <span>-42</span>
-                <span>-36</span>
-                <span>-30</span>
-                <span>-24</span>
-                <span>-18</span>
-                <span>-12</span>
-                <span>-6</span>
+                <span>-42</span><span>-36</span><span>-30</span><span>-24</span>
+                <span>-18</span><span>-12</span><span>-6</span>
                 <span className="text-slate-200 font-bold">0</span>
                 <span className="text-yellow-400">6</span>
                 <span className="text-red-400">12</span>
@@ -204,32 +231,25 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
           </button>
         </div>
 
-        {/* Right Section: Brand Logo / Status */}
+        {/* Right: GNOA brand */}
         <div className="flex items-center space-x-3 text-right">
-          <div className="flex flex-col items-end opacity-40 hover:opacity-80 transition-opacity">
-            <span className="text-xl font-black tracking-tighter text-slate-400 font-sans leading-none">
-              GNOA
-            </span>
-            <span className="text-[8px] uppercase tracking-widest text-slate-400 font-medium">
-              Software
-            </span>
+          <div className="flex flex-col items-end opacity-50 hover:opacity-100 transition-opacity">
+            <img src="/Vlogo.png" alt="GNOA Software" className="h-10 object-contain" />
           </div>
         </div>
       </div>
 
-      {/* Very Bottom Status Bar */}
+      {/* Bottom Status Bar */}
       <div className="h-5 bg-[#202020] border-t border-[#2e2e2e] px-2 flex items-center justify-between text-[10px] text-slate-400 select-none">
-        <div>GNOA Recording Suit v 9.36 © GNOA Software</div>
+        <div>GNOA Recording Suit v{appVersion} © GNOA Software</div>
         <div className="flex items-center space-x-3">
-          <span className="text-slate-400">
+          <span>
             Audio: {settings.recordMicrophone ? 'Mic (ON)' : 'Mic (OFF)'} | {settings.recordSpeakers ? 'System Sound (ON)' : 'System Sound (OFF)'}
           </span>
-          <span className="text-slate-400">
+          <span>
             Limit: {settings.limitMaxRecordingTime ? `${Math.floor(settings.maxRecordingTimeSeconds / 60)} min` : 'Unlimited'}
           </span>
-          <span className="text-emerald-400 font-medium">
-            ● Ready
-          </span>
+          <span className={`font-medium ${statusColor}`}>● {statusText}</span>
         </div>
       </div>
     </div>
