@@ -7,6 +7,7 @@ import React from 'react';
 import { RecordingState } from '../types';
 import { formatTime } from '../utils/helpers';
 import { Maximize2, Square, Pause, Cpu } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 interface BackgroundTrayWidgetProps {
   recordingState: RecordingState;
@@ -35,7 +36,7 @@ export const BackgroundTrayWidget: React.FC<BackgroundTrayWidgetProps> = ({
         <div className="bg-[#1e1e1e]/90 backdrop-blur-xl border border-white/15 p-6 rounded-xl shadow-2xl max-w-md w-full text-slate-100 flex flex-col items-center space-y-4">
           <div className="flex items-center space-x-2">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center shadow-lg">
-              <img src="/logo.png" alt="GNOA" className="w-6 h-6 object-contain" />
+              <img src={logoImg} alt="GNOA" className="w-6 h-6 object-contain" />
             </div>
             <div className="text-left">
               <div className="font-bold text-base text-white tracking-wide">

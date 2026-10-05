@@ -30,6 +30,7 @@
       "repo": "ForUseOnly"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -56,6 +57,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/**/*",
       "package.json"
     ]
   },

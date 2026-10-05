@@ -216,17 +216,35 @@ function registerIpcHandlers() {
 
 // ─── Create main window ───────────────────────────────────────────────────────
 function createWindow() {
-  // Choose icon: .ico for Windows (best quality at all DPI scales)
-  const iconFile = process.platform === 'win32'
-    ? path.join(__dirname, '../public/logo.ico')
-    : path.join(__dirname, '../public/logo.png');
+  // Choose icon: search in electron/assets, public, dist
+  let iconFile = null;
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(__dirname, 'assets/logo.ico'),
+        path.join(__dirname, '../public/logo.ico'),
+        path.join(__dirname, '../dist/logo.ico'),
+        path.join(__dirname, 'assets/logo.png'),
+        path.join(__dirname, '../public/logo.png'),
+        path.join(__dirname, '../dist/logo.png'),
+      ]
+    : [
+        path.join(__dirname, 'assets/logo.png'),
+        path.join(__dirname, '../public/logo.png'),
+        path.join(__dirname, '../dist/logo.png'),
+      ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      iconFile = c;
+      break;
+    }
+  }
 
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    icon: iconFile,
+    icon: iconFile || undefined,
     // ── Security: contextIsolation ON, nodeIntegration OFF ──
     webPreferences: {
       nodeIntegration: true,      // kept for ipcRenderer.require compatibility with existing renderer code

@@ -6,6 +6,7 @@ import React from 'react';
 import { Minus, Square, X, Minimize2 } from 'lucide-react';
 import { RecordingState } from '../types';
 import { formatTime } from '../utils/helpers';
+import logoImg from '../assets/logo.png';
 
 interface TitleBarProps {
   onMinimizeToTray: () => void;
@@ -29,7 +30,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* Left: Icon + Title + Status */}
       <div className="flex items-center space-x-2 pl-2">
         <img
-          src="/logo.png"
+          src={logoImg}
           alt="GNOA Icon"
           className="w-4 h-4 flex-shrink-0 object-contain drop-shadow-sm"
         />

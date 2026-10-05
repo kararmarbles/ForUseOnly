@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RecordingState, AppSettings } from '../types';
 import { Camera, Volume2 } from 'lucide-react';
 import { formatTime } from '../utils/helpers';
+import vlogoImg from '../assets/Vlogo.png';
 
 interface BottomControlDockProps {
   recordingState: RecordingState;
@@ -234,7 +235,7 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
         {/* Right: GNOA brand */}
         <div className="flex items-center space-x-3 text-right">
           <div className="flex flex-col items-end opacity-50 hover:opacity-100 transition-opacity">
-            <img src="/Vlogo.png" alt="GNOA Software" className="h-10 object-contain" />
+            <img src={vlogoImg} alt="GNOA Software" className="h-10 object-contain" />
           </div>
         </div>
       </div>
