@@ -1,0 +1,39 @@
+END USER LICENSE AGREEMENT AND TERMS & CONDITIONS (T&C)
+
+Product: Recording Software / GNOA Recording Suit
+Publisher: GNOA Systems
+Version: 1.0.0
+
+PLEASE READ THIS END USER LICENSE AGREEMENT ("AGREEMENT") CAREFULLY BEFORE INSTALLING OR USING THIS SOFTWARE. BY CLICKING "I AGREE" OR PROCEEDING WITH THE INSTALLATION, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS AGREEMENT.
+
+1. GRANT OF LICENSE
+Subject to the terms of this Agreement, GNOA Systems grants you a non-exclusive, non-transferable, revocable license to install and use Recording Software on your Windows laptop or personal computer.
+
+2. PERMITTED USE & PERMISSIONS
+Recording Software is designed for screen capture, webcam video recording, microphone audio recording, and system sound capture.
+- You are granted permission to record screen, window, audio, and webcam sources for your personal, business, or educational use.
+- The software requests local system permissions to access your camera, microphone, and display capture interfaces to perform its recording functions.
+- You agree to use the software in full compliance with all applicable local, national, and international laws, including privacy and wiretapping laws regarding audio and video recording.
+
+3. LOCAL DATA STORAGE & PRIVACY
+- All video recordings, audio tracks, and snapshots captured by Recording Software are stored strictly locally on your computer in your chosen destination directory.
+- No personal recording data, audio captures, or video files are transmitted to external servers without your explicit action.
+
+4. UPDATES AND UPGRADES
+- This application is designed to be upgradeable. Subsequent versions, updates, bug fixes, and feature enhancements may be released.
+- Upgrading to new versions preserves your local configuration, recordings, and custom destination folders.
+
+5. RESTRICTIONS
+You may not:
+- Reverse engineer, decompile, or disassemble the software, except to the extent permitted by applicable law.
+- Distribute, lease, sublicense, or rent the software to unauthorized third parties without prior written consent.
+- Remove or alter any proprietary notices or labels on the software.
+
+6. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+7. TERMINATION
+This Agreement is effective until terminated. Your rights under this Agreement will terminate automatically without notice if you fail to comply with any of its terms. Upon termination, you must cease all use and uninstall the software.
+
+8. ACCEPTANCE
+By clicking "I Agree" or "Next", you accept all terms and conditions above and authorize the installation to proceed.
