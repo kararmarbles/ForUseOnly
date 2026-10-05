@@ -26,7 +26,7 @@ export const defaultSettings: AppSettings = {
   // Output
   warnLowDiskSpace: 300,
   overwriteOldRecordings: false,
-  destinationFolder: 'D:\\recording For Google Drive\\recording start 1 jan 2026\\Jan',
+  destinationFolder: 'D:\\Recordings',
   fileNamePrompt: false,
   fileNameFormat: '%autonumber%-%DD%-%MM%-%YYYY%',
   mirrorRecording: false,

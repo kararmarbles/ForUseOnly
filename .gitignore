@@ -9,9 +9,7 @@ release/
 
 # Environment Variables (Keep private secrets safe)
 .env
-.env.local
-.env.production
-!.env.example
+.env.*
 
 # Logs and system files
 *.log
