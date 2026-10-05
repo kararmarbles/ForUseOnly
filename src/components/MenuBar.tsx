@@ -2,16 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import { RecordingState, ScreenSelectionMode } from '../types';
 
 // ── Version helper ──────────────────────────────────────────────────────────
-// Read from package.json (vite injects import.meta.env, or fall back to '1.0.1')
+// Read from package.json (vite injects import.meta.env, or fall back to '1.0.2')
 const APP_VERSION: string = (() => {
   try {
     // In Electron renderer, ask main process for the real version
     if ((window as any).require) {
       // Synchronous IPC not available for invoke; we'll load async below
-      return '1.0.1';
+      return '1.0.2';
     }
   } catch { /* ignore */ }
-  return '1.0.1';
+  return '1.0.2';
 })();
 
 interface MenuBarProps {
@@ -39,6 +39,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onSelectScreenMode,
   onToggleWebcamOverlay,
   webcamOverlayActive,
+  onOpenSourcePicker,
 }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);

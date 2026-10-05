@@ -54,10 +54,26 @@ export const BackgroundTrayWidget: React.FC<BackgroundTrayWidgetProps> = ({
               <Cpu className="w-4 h-4 text-sky-400" />
               <span>Lightweight Background Mode</span>
             </div>
-            <div className={`px-2 py-0.5 rounded text-[10px] font-sans font-semibold uppercase ${
-              isRecording ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-slate-800 text-slate-300'
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-[10px] font-sans font-semibold uppercase ${
+              isRecording
+                ? 'bg-red-950/90 text-red-300 border border-red-700 shadow-[0_0_10px_rgba(239,68,68,0.4)] animate-pulse'
+                : isPaused
+                ? 'bg-amber-950/90 text-amber-300 border border-amber-700 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
+                : 'bg-slate-800 text-slate-300'
             }`}>
-              {recordingState}
+              {isRecording && (
+                <span className="relative flex h-2 w-2 mr-0.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600" />
+                </span>
+              )}
+              {isPaused && (
+                <span className="flex space-x-0.5 items-center mr-0.5">
+                  <span className="w-0.5 h-2 bg-amber-400 rounded-xs" />
+                  <span className="w-0.5 h-2 bg-amber-400 rounded-xs" />
+                </span>
+              )}
+              <span>{recordingState}</span>
             </div>
           </div>
 

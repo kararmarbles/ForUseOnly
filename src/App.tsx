@@ -132,6 +132,18 @@ export default function App() {
     }
   }, [recordings]);
 
+  // Synchronize recording state with Windows taskbar overlay icon (blinking red dot & pause icon)
+  useEffect(() => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.send('set-recording-overlay-state', recordingState);
+      } catch (e) {
+        console.warn('Failed to update taskbar overlay icon:', e);
+      }
+    }
+  }, [recordingState]);
+
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -983,6 +995,8 @@ export default function App() {
             onClose={() => setIsMinimizedToTray(true)}
             isMaximized={isMaximized}
             onToggleMaximize={() => setIsMaximized(!isMaximized)}
+            recordingState={recordingState}
+            elapsedMs={elapsedMs}
           />
 
 

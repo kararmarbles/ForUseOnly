@@ -45,7 +45,7 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   const isIdle = recordingState === 'idle';
 
   // Dynamic version from Electron main process
-  const [appVersion, setAppVersion] = useState('1.0.1');
+  const [appVersion, setAppVersion] = useState('1.0.2');
   useEffect(() => {
     if ((window as any).require) {
       try {
@@ -249,7 +249,22 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
           <span>
             Limit: {settings.limitMaxRecordingTime ? `${Math.floor(settings.maxRecordingTimeSeconds / 60)} min` : 'Unlimited'}
           </span>
-          <span className={`font-medium ${statusColor}`}>● {statusText}</span>
+          <span className={`flex items-center space-x-1 font-medium ${statusColor}`}>
+            {isRecording ? (
+              <span className="relative flex h-2 w-2 mr-0.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600" />
+              </span>
+            ) : isPaused ? (
+              <span className="flex space-x-0.5 items-center mr-0.5">
+                <span className="w-0.5 h-2 bg-amber-400 rounded-xs" />
+                <span className="w-0.5 h-2 bg-amber-400 rounded-xs" />
+              </span>
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-0.5" />
+            )}
+            <span>{statusText}</span>
+          </span>
         </div>
       </div>
     </div>

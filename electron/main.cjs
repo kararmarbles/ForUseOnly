@@ -10,6 +10,7 @@ const {
   dialog,
   shell,
   session,
+  nativeImage,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -20,8 +21,87 @@ const APP_VERSION = app.getVersion(); // Reads from package.json automatically
 // ─── Persistent settings path ────────────────────────────────────────────────
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
+// ─── Taskbar Overlay State (Blinking Red Dot for Recording, Pause Icon for Paused) ───
+let mainWindow = null;
+let overlayInterval = null;
+let overlayBlinkVisible = false;
+let overlayRecordIcon = null;
+let overlayPauseIcon = null;
+
+function loadOverlayIcon(filename) {
+  try {
+    const p = path.join(__dirname, 'assets', filename);
+    if (fs.existsSync(p)) {
+      return nativeImage.createFromBuffer(fs.readFileSync(p));
+    }
+  } catch (err) {
+    console.warn('Failed to load overlay image:', filename, err);
+  }
+  return null;
+}
+
+function clearOverlayBlink() {
+  if (overlayInterval) {
+    clearInterval(overlayInterval);
+    overlayInterval = null;
+  }
+  overlayBlinkVisible = false;
+}
+
+function updateRecordingOverlay(state) {
+  clearOverlayBlink();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (process.platform !== 'win32') return;
+
+  try {
+    if (state === 'recording') {
+      if (!overlayRecordIcon) {
+        overlayRecordIcon = loadOverlayIcon('overlay_record.png');
+      }
+      if (overlayRecordIcon) {
+        mainWindow.setOverlayIcon(overlayRecordIcon, 'Recording');
+        overlayBlinkVisible = true;
+
+        // Blinking red dot: toggle between red dot and cleared every 650ms
+        overlayInterval = setInterval(() => {
+          if (!mainWindow || mainWindow.isDestroyed()) {
+            clearOverlayBlink();
+            return;
+          }
+          overlayBlinkVisible = !overlayBlinkVisible;
+          try {
+            if (overlayBlinkVisible) {
+              mainWindow.setOverlayIcon(overlayRecordIcon, 'Recording');
+            } else {
+              mainWindow.setOverlayIcon(null, '');
+            }
+          } catch (e) {
+            clearOverlayBlink();
+          }
+        }, 650);
+      }
+    } else if (state === 'paused') {
+      if (!overlayPauseIcon) {
+        overlayPauseIcon = loadOverlayIcon('overlay_pause.png');
+      }
+      if (overlayPauseIcon) {
+        mainWindow.setOverlayIcon(overlayPauseIcon, 'Paused');
+      }
+    } else {
+      mainWindow.setOverlayIcon(null, '');
+    }
+  } catch (err) {
+    console.warn('Failed to update taskbar overlay icon:', err);
+  }
+}
+
 // ─── Register all IPC handlers ONCE (outside createWindow to prevent duplicate-handler crash) ──
 function registerIpcHandlers() {
+  // ── Taskbar recording overlay state ──────────────
+  ipcMain.on('set-recording-overlay-state', (_event, state) => {
+    updateRecordingOverlay(state);
+  });
+
   // ── Screen and Window capture sources ────────────
   ipcMain.handle('get-desktop-sources', async (event, types = ['screen']) => {
     // Fetch windows/screens. If windows are requested, fetch small thumbnails to display in picker UI.
@@ -155,6 +235,12 @@ function createWindow() {
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
     },
+  });
+
+  mainWindow = win;
+  win.on('closed', () => {
+    clearOverlayBlink();
+    mainWindow = null;
   });
 
   const isDev = !app.isPackaged;
