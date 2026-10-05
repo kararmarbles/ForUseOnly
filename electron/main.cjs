@@ -147,9 +147,19 @@ function createWindow() {
     });
   });
 
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('No update available:', info ? info.version : 'current is latest');
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.warn('AutoUpdater warning:', err ? err.message : err);
+  });
+
   // Check for updates automatically in the background on startup (packaged build only)
   if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.warn('Initial update check suppressed:', err.message);
+    });
   }
 }
 

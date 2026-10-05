@@ -289,14 +289,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                     const { ipcRenderer } = (window as any).require('electron');
                     const res = await ipcRenderer.invoke('check-for-updates');
                     if (res && res.error) {
-                      alert(`Update status: You are running the latest version (v1.0.0).`);
+                      alert(`Update Check:\nYou are running version v1.0.0.\n\nAutomatic updates check your GitHub Releases. When you publish a newer release (e.g. v1.0.1) on GitHub, the app will detect and install it automatically.`);
                     } else if (res && res.dev) {
-                      alert(`Update check: Running in development mode. Version v1.0.0 is up to date.`);
+                      alert(`Update check: Running in development mode. Version v1.0.0 is active.`);
                     } else {
-                      alert(`Checking for updates... You have the latest version installed (v1.0.0).`);
+                      alert(`Update Check:\nVersion v1.0.0 is up to date.\nWhen a new release (e.g. v1.0.1) is published on GitHub, the software will update automatically.`);
                     }
                   } catch (e) {
-                    alert(`Update status: You are running the latest version (v1.0.0).`);
+                    alert(`Update Check: You are running version v1.0.0.`);
                   }
                 } else {
                   alert(`Update status: You are running the latest version (v1.0.0).`);
