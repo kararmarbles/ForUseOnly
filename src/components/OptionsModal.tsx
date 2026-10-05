@@ -23,9 +23,22 @@ export const OptionsModal: React.FC<OptionsModalProps> = ({
     videoInputs: [],
   });
 
+  const [timeInput, setTimeInput] = useState<string>(() => {
+    const sec = settings.maxRecordingTimeSeconds || 300;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  });
+
   // Keep local settings in sync when opening
   useEffect(() => {
     setLocalSettings(settings);
+    const sec = settings.maxRecordingTimeSeconds || 300;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    setTimeInput(`${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
     if (initialTab) {
       setActiveTab(initialTab);
     }
@@ -45,7 +58,14 @@ export const OptionsModal: React.FC<OptionsModalProps> = ({
   if (!isOpen) return null;
 
   const handleSave = () => {
-    onSaveSettings(localSettings);
+    const sec = parseTimeString(timeInput);
+    const updated: AppSettings = {
+      ...localSettings,
+      maxRecordingTimeSeconds: sec,
+      // If time is set, ensure limit is enabled
+      limitMaxRecordingTime: localSettings.limitMaxRecordingTime || sec > 0,
+    };
+    onSaveSettings(updated);
     onClose();
   };
 
@@ -518,10 +538,16 @@ export const OptionsModal: React.FC<OptionsModalProps> = ({
                     </label>
                     <input
                       type="text"
-                      defaultValue={timeString}
-                      onBlur={(e) => {
-                        const sec = parseTimeString(e.target.value);
-                        setLocalSettings({ ...localSettings, maxRecordingTimeSeconds: sec });
+                      value={timeInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTimeInput(val);
+                        const sec = parseTimeString(val);
+                        setLocalSettings((prev) => ({
+                          ...prev,
+                          maxRecordingTimeSeconds: sec,
+                          limitMaxRecordingTime: true,
+                        }));
                       }}
                       className="w-24 bg-[#1e1e1e] border border-[#555] rounded px-2 py-0.5 text-center text-cyan-400 font-mono font-semibold"
                     />

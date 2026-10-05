@@ -16,6 +16,7 @@ import {
   SnapshotItem,
 } from './types';
 import { defaultSettings, formatFileSize } from './utils/helpers';
+import fixWebmDuration from 'fix-webm-duration';
 import { audioEngine } from './utils/audioEngine';
 import { TitleBar } from './components/TitleBar';
 import { MenuBar } from './components/MenuBar';
@@ -142,6 +143,13 @@ export default function App() {
   const pausedElapsedRef = useRef<number>(0);
   const vuAnimationFrameRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
+  const isSplittingRef = useRef(false);
+  const activeCombinedStreamRef = useRef<MediaStream | null>(null);
+  const recordingsCountRef = useRef(recordings.length);
+
+  useEffect(() => {
+    recordingsCountRef.current = recordings.length;
+  }, [recordings.length]);
 
   // --- Real Audio VU Meter Loop ---
   useEffect(() => {
@@ -290,6 +298,222 @@ export default function App() {
     }
   };
 
+  // --- Fix Duration & Save Recording Blob ---
+  const saveAndRegisterRecording = async (
+    rawBlob: Blob,
+    durationMs: number,
+    restoreWindow: boolean
+  ) => {
+    // Fix WebM/MKV container duration header so laptop players (Windows Media Player, Movies & TV, Chrome)
+    // show duration and seekable timeline properly
+    const durationMsValid = Math.max(500, Math.round(durationMs));
+    let finalBlob: Blob = rawBlob;
+    try {
+      finalBlob = await new Promise<Blob>((resolve) => {
+        fixWebmDuration(rawBlob, durationMsValid, (fixed) => {
+          resolve(fixed);
+        }, { logger: false });
+        setTimeout(() => resolve(rawBlob), 1500);
+      });
+    } catch (err) {
+      console.warn('fixWebmDuration note:', err);
+      finalBlob = rawBlob;
+    }
+
+    const url = URL.createObjectURL(finalBlob);
+    const now = new Date();
+    const durationSec = Math.max(1, Math.round(durationMsValid / 1000));
+
+    // Generate filename based on template - MKV format (Issue #5)
+    const dateFormatted = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    const timeFormatted = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+    const autoNumber = (recordingsCountRef.current + 1).toString().padStart(3, '0');
+    recordingsCountRef.current += 1;
+    const title = `GNOA_${dateFormatted}_${timeFormatted}_${autoNumber}`;
+    const fileName = `${title}.mkv`;
+
+    // Auto-save recording directly into user's desired destination folder (Issue #7)
+    let savedFilePath = '';
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        const arrayBuffer = await finalBlob.arrayBuffer();
+        const saveRes = await ipcRenderer.invoke('save-recording-file', {
+          destinationFolder: settings.destinationFolder,
+          fileName,
+          buffer: new Uint8Array(arrayBuffer),
+        });
+        if (saveRes && saveRes.success) {
+          savedFilePath = saveRes.filePath;
+        }
+
+        if (restoreWindow) {
+          ipcRenderer.send('window-restore');
+        }
+      } catch (err) {
+        console.warn('Auto-save note:', err);
+      }
+    }
+
+    if (restoreWindow) {
+      setIsMinimizedToTray(false);
+    }
+
+    const newRecording: RecordingItem = {
+      id: Date.now().toString(),
+      title,
+      url,
+      blob: finalBlob,
+      date: now.toLocaleString(),
+      durationSeconds: durationSec,
+      fileSizeFormatted: formatFileSize(finalBlob.size),
+      sourceType: source,
+      resolution: source === 'screen' ? '1920x1080' : '1280x720',
+      savedFilePath,
+    };
+
+    setRecordings((prev) => [newRecording, ...prev]);
+    setLastRecordedItem(newRecording);
+
+    if (restoreWindow) {
+      setRecordingState('idle');
+
+      // Show Debut-style notification (Issue #3)
+      if (!settings.disablePlayVideoNotification) {
+        setShowSuccessBanner(true);
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Recording Complete', {
+              body: `Video saved as ${fileName} in ${settings.destinationFolder}`,
+            });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    } else {
+      // In auto-continue mode, send subtle desktop notification if permitted
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Recording Segment Saved', {
+            body: `Video segment saved as ${fileName}. Recording next segment...`,
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
+  // --- Start Recording On Stream ---
+  const startRecordingOnStream = (combinedStream: MediaStream) => {
+    activeCombinedStreamRef.current = combinedStream;
+
+    // Determine mimeType prioritizing MKV
+    const mimeTypes = [
+      'video/x-matroska;codecs=avc1,opus',
+      'video/x-matroska;codecs=vp9,opus',
+      'video/x-matroska',
+      'video/webm;codecs=vp9,opus',
+      'video/webm',
+      'video/mp4',
+    ];
+    const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/x-matroska';
+
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType: selectedMime,
+      videoBitsPerSecond: 3000000,
+    });
+
+    recordedChunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        recordedChunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      // If not splitting, finalize recording and restore window
+      if (!isSplittingRef.current) {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+        const finalDuration = Date.now() - startTimeRef.current + pausedElapsedRef.current;
+        const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
+        saveAndRegisterRecording(rawBlob, finalDuration, true);
+      }
+    };
+
+    recorder.start(1000); // 1-second chunks
+    mediaRecorderRef.current = recorder;
+
+    // Start elapsed timer
+    setRecordingState('recording');
+    startTimeRef.current = Date.now();
+    pausedElapsedRef.current = 0;
+    setElapsedMs(0);
+
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    timerIntervalRef.current = window.setInterval(() => {
+      const now = Date.now();
+      const currentElapsed = now - startTimeRef.current + pausedElapsedRef.current;
+      setElapsedMs(currentElapsed);
+
+      // Check user-configured recording limit (requirement: "recording stop automatic when hit my set time and start again")
+      if (settings.limitMaxRecordingTime && settings.maxRecordingTimeSeconds > 0) {
+        if (currentElapsed >= settings.maxRecordingTimeSeconds * 1000) {
+          if (settings.onMaxTimeReached === 'stop') {
+            handleStopRecording();
+          } else {
+            // Auto split & continue seamlessly
+            handleSegmentSplit();
+          }
+        }
+      }
+    }, 50);
+  };
+
+  // --- Handle Time Limit Hit: Auto Split & Continue Recording ---
+  const handleSegmentSplit = async () => {
+    if (isSplittingRef.current) return;
+    isSplittingRef.current = true;
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    const currentRecorder = mediaRecorderRef.current;
+    const segmentDuration = Date.now() - startTimeRef.current + pausedElapsedRef.current;
+
+    if (currentRecorder && currentRecorder.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        currentRecorder.addEventListener('stop', () => resolve(), { once: true });
+        currentRecorder.stop();
+      });
+    }
+
+    const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
+    // Save segment without restoring window
+    await saveAndRegisterRecording(rawBlob, segmentDuration, false);
+
+    if (settings.soundRecordToneInterval) {
+      audioEngine.playTone(880, 0.1);
+    }
+
+    const stream = activeCombinedStreamRef.current;
+    isSplittingRef.current = false;
+
+    // Continue recording on active stream immediately
+    if (stream && stream.active) {
+      startRecordingOnStream(stream);
+    } else {
+      startRecordingImmediate();
+    }
+  };
+
   // --- Execute Actual Recording Start ---
   const startRecordingImmediate = async () => {
     // Determine active stream to record
@@ -325,44 +549,6 @@ export default function App() {
 
       const combinedStream = new MediaStream(tracks);
 
-      // Determine mimeType prioritizing MKV
-      const mimeTypes = [
-        'video/x-matroska;codecs=avc1,opus',
-        'video/x-matroska;codecs=vp9,opus',
-        'video/x-matroska',
-        'video/webm;codecs=vp9,opus',
-        'video/webm',
-        'video/mp4',
-      ];
-      const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/x-matroska';
-
-      const recorder = new MediaRecorder(combinedStream, {
-        mimeType: selectedMime,
-        videoBitsPerSecond: 3000000,
-      });
-
-      recordedChunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          recordedChunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        finalizeRecording();
-      };
-
-      recorder.start(1000); // 1-second chunks
-      mediaRecorderRef.current = recorder;
-
-      // Start elapsed timer
-      setRecordingState('recording');
-      startTimeRef.current = Date.now();
-      pausedElapsedRef.current = 0;
-      setElapsedMs(0);
-      setShowSuccessBanner(false);
-
       // Auto-minimize software window when recording starts (Issue #4)
       if ((window as any).require) {
         try {
@@ -373,108 +559,12 @@ export default function App() {
         }
       }
       setIsMinimizedToTray(true);
+      setShowSuccessBanner(false);
 
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = window.setInterval(() => {
-        const now = Date.now();
-        const currentElapsed = now - startTimeRef.current + pausedElapsedRef.current;
-        setElapsedMs(currentElapsed);
-
-        // Check user-configured recording limit (requirement: "can set recording time")
-        if (settings.limitMaxRecordingTime && settings.maxRecordingTimeSeconds > 0) {
-          if (currentElapsed >= settings.maxRecordingTimeSeconds * 1000) {
-            if (settings.onMaxTimeReached === 'stop') {
-              handleStopRecording();
-            } else {
-              // Auto split & continue
-              handleStopRecording();
-              setTimeout(() => startRecordingImmediate(), 800);
-            }
-          }
-        }
-      }, 50);
+      startRecordingOnStream(combinedStream);
     } catch (err) {
       console.error('Failed to start MediaRecorder:', err);
       alert('Could not start recording with current stream.');
-    }
-  };
-
-  // --- Finalize Recording into Blob & Add to Library ---
-  const finalizeRecording = async () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-
-    if (settings.soundRecordToneStop) {
-      audioEngine.playTone(440, 0.2); // Stop beep
-    }
-
-    const blob = new Blob(recordedChunksRef.current, { type: 'video/x-matroska' });
-    const url = URL.createObjectURL(blob);
-    const now = new Date();
-    const durationSec = Math.max(1, Math.round(elapsedMs / 1000));
-
-    // Generate filename based on template - MKV format (Issue #5)
-    const dateFormatted = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-    const timeFormatted = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-    const autoNumber = (recordings.length + 1).toString().padStart(3, '0');
-    const title = `GNOA_${dateFormatted}_${timeFormatted}_${autoNumber}`;
-    const fileName = `${title}.mkv`;
-
-    // Auto-save recording directly into user's desired destination folder (Issue #7)
-    let savedFilePath = '';
-    if ((window as any).require) {
-      try {
-        const { ipcRenderer } = (window as any).require('electron');
-        const arrayBuffer = await blob.arrayBuffer();
-        const saveRes = await ipcRenderer.invoke('save-recording-file', {
-          destinationFolder: settings.destinationFolder,
-          fileName,
-          buffer: new Uint8Array(arrayBuffer),
-        });
-        if (saveRes && saveRes.success) {
-          savedFilePath = saveRes.filePath;
-        }
-
-        // Restore window from auto-minimize when recording finishes (Issue #4)
-        ipcRenderer.send('window-restore');
-      } catch (err) {
-        console.warn('Auto-save note:', err);
-      }
-    }
-
-    setIsMinimizedToTray(false);
-
-    const newRecording: RecordingItem = {
-      id: Date.now().toString(),
-      title,
-      url,
-      blob,
-      date: now.toLocaleString(),
-      durationSeconds: durationSec,
-      fileSizeFormatted: formatFileSize(blob.size),
-      sourceType: source,
-      resolution: source === 'screen' ? '1920x1080' : '1280x720',
-      savedFilePath,
-    };
-
-    setRecordings((prev) => [newRecording, ...prev]);
-    setLastRecordedItem(newRecording);
-    setRecordingState('idle');
-
-    // Show Debut-style notification (Issue #3)
-    if (!settings.disablePlayVideoNotification) {
-      setShowSuccessBanner(true);
-      try {
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Recording Complete', {
-            body: `Video saved as ${fileName} in ${settings.destinationFolder}`,
-          });
-        }
-      } catch (e) {
-        // ignore
-      }
     }
   };
 
@@ -523,17 +613,39 @@ export default function App() {
       startTimeRef.current = Date.now();
       timerIntervalRef.current = window.setInterval(() => {
         const now = Date.now();
-        setElapsedMs(now - startTimeRef.current + pausedElapsedRef.current);
+        const currentElapsed = now - startTimeRef.current + pausedElapsedRef.current;
+        setElapsedMs(currentElapsed);
+
+        if (settings.limitMaxRecordingTime && settings.maxRecordingTimeSeconds > 0) {
+          if (currentElapsed >= settings.maxRecordingTimeSeconds * 1000) {
+            if (settings.onMaxTimeReached === 'stop') {
+              handleStopRecording();
+            } else {
+              handleSegmentSplit();
+            }
+          }
+        }
       }, 50);
     }
   };
 
   // --- Stop Recording ---
   const handleStopRecording = () => {
+    isSplittingRef.current = false;
+
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
       setCountdownValue(null);
+    }
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    if (settings.soundRecordToneStop) {
+      audioEngine.playTone(440, 0.2); // Stop beep
     }
 
     if ((window as any).require) {
@@ -548,10 +660,6 @@ export default function App() {
       mediaRecorderRef.current.stop();
     } else {
       setRecordingState('idle');
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
     }
   };
 

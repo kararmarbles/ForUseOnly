@@ -33,9 +33,9 @@ export const defaultSettings: AppSettings = {
   mirrorFolder: '',
 
   // Record
-  limitMaxRecordingTime: false,
-  maxRecordingTimeSeconds: 1800, // 0:30:00
-  onMaxTimeReached: 'stop',
+  limitMaxRecordingTime: true,
+  maxRecordingTimeSeconds: 300, // 0:05:00 (5 minutes limit)
+  onMaxTimeReached: 'continue', // Auto split & continue
   disablePreviewInScreenCapture: false,
   minimizeWhenRecording: true,
   minimizeToTray: false,
