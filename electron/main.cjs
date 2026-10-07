@@ -268,51 +268,19 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // ── Auto-select primary screen for getDisplayMedia (no "select source" prompt) ──
-  const autoSelectScreen = (request, callback) => {
-    desktopCapturer.getSources({ types: ['screen'] })
-      .then((sources) => {
-        if (sources && sources.length > 0) {
-          const primary =
-            sources.find(s => s.id.includes('screen:0') ||
-              s.name.toLowerCase().includes('entire') ||
-              s.name.toLowerCase().includes('screen 1')) ||
-            sources[0];
-          callback({ video: primary, audio: 'loopback' });
-        } else {
-          callback();
-        }
-      })
-      .catch((err) => {
-        console.error('Error getting sources for auto-select:', err);
-        callback();
-      });
-  };
-
-  if (session && session.defaultSession) {
-    session.defaultSession.setDisplayMediaRequestHandler(autoSelectScreen);
-  }
-  win.webContents.session.setDisplayMediaRequestHandler(autoSelectScreen);
-
-  // ── Window minimize / restore for background-recording mode ──────────────
-  ipcMain.on('window-minimize', () => win.minimize());
+  // ── Window minimize / restore / close ──────────────
+  ipcMain.on('window-minimize', () => {
+    if (win && !win.isDestroyed()) win.minimize();
+  });
   ipcMain.on('window-restore', () => {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
   });
-  
-  ipcMain.on('window-resize-mini', () => {
-    if (win.isMinimized()) win.restore();
-    win.setSize(420, 320);
-    win.setAlwaysOnTop(true);
-  });
-  
-  ipcMain.on('window-resize-normal', () => {
-    win.setSize(1200, 800);
-    win.setAlwaysOnTop(false);
-    win.show();
-    win.focus();
+  ipcMain.on('window-close', () => {
+    if (win && !win.isDestroyed()) win.close();
   });
 
   // ── Auto-updater ──────────────────────────────────────────────────────────
@@ -351,6 +319,29 @@ function createWindow() {
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Auto-select primary screen for getDisplayMedia without any browser "Share screen" prompt
+  if (session && session.defaultSession) {
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types: ['screen'] })
+        .then((sources) => {
+          if (sources && sources.length > 0) {
+            const primary =
+              sources.find(s => s.id.includes('screen:0') ||
+                s.name.toLowerCase().includes('entire') ||
+                s.name.toLowerCase().includes('screen 1')) ||
+              sources[0];
+            callback({ video: primary });
+          } else {
+            callback();
+          }
+        })
+        .catch((err) => {
+          console.error('Error auto-selecting screen:', err);
+          callback();
+        });
+    });
+  }
+
   registerIpcHandlers();
   createWindow();
 

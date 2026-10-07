@@ -19,13 +19,31 @@ import { PreviewViewport } from './components/PreviewViewport';
 import { BottomControlDock } from './components/BottomControlDock';
 import { OptionsModal } from './components/OptionsModal';
 import { RecordingsModal } from './components/RecordingsModal';
-import { BackgroundTrayWidget } from './components/BackgroundTrayWidget';
 
 export default function App() {
+  const handleMinimize = () => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.send('window-minimize');
+      } catch (e) {}
+    }
+  };
+
+  const handleClose = () => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.send('window-close');
+      } catch (e) {}
+    } else {
+      window.close();
+    }
+  };
+
   // Layout state
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isMinimizedToTray, setIsMinimizedToTray] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
 
   // Tabs & Modals
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
@@ -336,15 +354,14 @@ export default function App() {
     const durationMsValid = Math.max(500, Math.round(durationMs));
     let finalBlob: Blob = rawBlob;
 
-    // Apply fixWebmDuration ONLY for webm/mkv formats (never on mp4)
-    if (fileExt === 'webm' || (fileExt === 'mkv' && rawBlob.type.includes('webm'))) {
+    // Apply fixWebmDuration whenever the recorded stream is WebM or output is webm/mkv
+    if (rawBlob.type.includes('webm') || rawBlob.type.includes('matroska') || fileExt === 'webm' || fileExt === 'mkv') {
       try {
         finalBlob = await new Promise<Blob>((resolve) => {
           let resolved = false;
-          // Safety timeout – if fixWebmDuration takes >2s, use rawBlob
           const timeout = setTimeout(() => {
             if (!resolved) { resolved = true; resolve(rawBlob); }
-          }, 2000);
+          }, 3000);
           fixWebmDuration(rawBlob, durationMsValid, (fixed) => {
             if (!resolved) {
               resolved = true;
@@ -371,39 +388,34 @@ export default function App() {
     const title = `GNOA_${dateFormatted}_${timeFormatted}_${autoNumber}`;
     const fileName = `${title}.${fileExt}`;
 
-    // Auto-save recording directly into user's desired destination folder
+    // Auto-save recording directly into user's desired destination folder synchronously
     let savedFilePath = '';
     if ((window as any).require) {
       try {
         const { ipcRenderer } = (window as any).require('electron');
         const fs = (window as any).require('fs');
-          const path = (window as any).require('path');
-          const targetDir = settings.destinationFolder;
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-          const fullPath = path.join(targetDir, fileName);
-          const reader = (finalBlob as any).stream().getReader();
-          const writeStream = fs.createWriteStream(fullPath);
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            writeStream.write(value);
-          }
-          writeStream.end();
-          savedFilePath = fullPath;
+        const path = (window as any).require('path');
+        const targetDir = settings.destinationFolder || 'D:\Recordings';
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+        const fullPath = path.join(targetDir, fileName);
+
+        // Synchronous write of full ArrayBuffer -> Buffer ensures complete, untruncated files on disk
+        const arrayBuffer = await finalBlob.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        fs.writeFileSync(fullPath, buffer);
+        savedFilePath = fullPath;
 
         if (restoreWindow) {
-          ipcRenderer.send('window-resize-normal');
+          ipcRenderer.send('window-restore');
         }
       } catch (err) {
         console.warn('Auto-save note:', err);
       }
     }
 
-    if (restoreWindow) {
-      setIsMinimizedToTray(false);
-    }
+    
 
     const newRecording: RecordingItem = {
       id: Date.now().toString(),
@@ -421,32 +433,18 @@ export default function App() {
     setRecordings((prev) => [newRecording, ...prev]);
     setLastRecordedItem(newRecording);
 
-    if (restoreWindow) {
-      setRecordingState('idle');
-      // Auto-reset elapsed time so timer resets for the new recording!
-      setElapsedMs(0);
-      startTimeRef.current = 0;
-      pausedElapsedRef.current = 0;
+    setRecordingState('idle');
+    setElapsedMs(0);
+    startTimeRef.current = 0;
+    pausedElapsedRef.current = 0;
 
-      // Show Debut-style notification
-      if (!settings.disablePlayVideoNotification) {
-        setShowSuccessBanner(true);
-        try {
-          if ('Notification' in window) {
-            new Notification('Done!', {
-              body: `Your recording has been saved as ${fileName}`,
-            });
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-    } else {
-      // In auto-continue mode, send subtle desktop notification if permitted
+    // Show standard completion notification
+    if (!settings.disablePlayVideoNotification) {
+      setShowSuccessBanner(true);
       try {
         if ('Notification' in window) {
-          new Notification('Recording Segment Saved', {
-            body: `Video segment saved as ${fileName}. Recording next segment...`,
+          new Notification('Done!', {
+            body: `Your recording has been saved as ${fileName}`,
           });
         }
       } catch (e) {
@@ -553,7 +551,7 @@ export default function App() {
             handleStopRecording();
           } else {
             // Auto split & continue seamlessly
-            handleSegmentSplit(selectedMime, ext);
+            handleTimeLimitHit();
           }
         }
       }
@@ -561,45 +559,15 @@ export default function App() {
 
   };
 
-  // --- Handle Time Limit Hit: Auto Split & Continue Recording ---
-  const handleSegmentSplit = async (activeMime?: string, activeExt?: string) => {
-    if (isSplittingRef.current) return;
-    isSplittingRef.current = true;
+  // --- Handle Time Limit Hit: Directly Save and Start New Recording (No split situation) ---
+  const handleTimeLimitHit = () => {
+    handleStopRecording();
 
-    const mime = activeMime || currentMimeRef.current || 'video/mp4';
-    const ext = activeExt || currentExtRef.current || 'mp4';
-
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-
-    const currentRecorder = mediaRecorderRef.current;
-    const segmentDuration = Date.now() - startTimeRef.current + pausedElapsedRef.current;
-
-    if (currentRecorder && currentRecorder.state !== 'inactive') {
-      await new Promise<void>((resolve) => {
-        currentRecorder.addEventListener('stop', () => resolve(), { once: true });
-        currentRecorder.stop();
-      });
-    }
-
-    const rawBlob = new Blob(recordedChunksRef.current, { type: mime });
-    // Save segment without restoring window
-    await saveAndRegisterRecording(rawBlob, segmentDuration, false, ext);
-
-    if (settings.soundRecordToneInterval) {
-      audioEngine.playTone(880, 0.1);
-    }
-
-    const stream = activeCombinedStreamRef.current;
-    isSplittingRef.current = false;
-
-    // Continue recording on active stream immediately
-    if (stream && stream.active) {
-      startRecordingOnStream(stream);
-    } else {
-      startRecordingImmediate();
+    // If user configured to continue recording, start fresh new recording after save
+    if (settings.onMaxTimeReached === 'continue') {
+      setTimeout(() => {
+        handleRecord();
+      }, 1500);
     }
   };
 
@@ -700,12 +668,12 @@ export default function App() {
       if ((window as any).require) {
         try {
           const { ipcRenderer } = (window as any).require('electron');
-          ipcRenderer.send('window-resize-mini');
+          ipcRenderer.send('window-minimize');
         } catch (e) {
           // ignore
         }
       }
-      setIsMinimizedToTray(true);
+      
       setShowSuccessBanner(false);
 
       startRecordingOnStream(combinedStream);
@@ -768,7 +736,7 @@ export default function App() {
             if (settings.onMaxTimeReached === 'stop') {
               handleStopRecording();
             } else {
-              handleSegmentSplit();
+              handleTimeLimitHit();
             }
           }
         }
@@ -800,10 +768,10 @@ export default function App() {
     if ((window as any).require) {
       try {
         const { ipcRenderer } = (window as any).require('electron');
-        ipcRenderer.send('window-resize-normal');
+        ipcRenderer.send('window-restore');
       } catch (e) {}
     }
-    setIsMinimizedToTray(false);
+    
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -980,23 +948,12 @@ export default function App() {
         isMaximized ? 'fixed inset-0' : 'p-0'
       }`}
     >
-      {/* If Minimized to Tray (Background Application Mode) */}
-      {isMinimizedToTray ? (
-        <BackgroundTrayWidget
-          recordingState={recordingState}
-          elapsedMs={elapsedMs}
-          onRestore={() => setIsMinimizedToTray(false)}
-          onRecord={handleRecord}
-          onPause={handlePause}
-          onStop={handleStopRecording}
-        />
-      ) : (
-        /* Full GNOA Application Main Window */
-        <div className="flex-1 flex flex-col bg-[#1e1e1e] h-full overflow-hidden border border-[#333]">
+      {/* Full GNOA Application Main Window */}
+      <div className="flex-1 flex flex-col bg-[#1e1e1e] h-full overflow-hidden border border-[#333]">
           {/* 1. Window Title Bar */}
           <TitleBar
-            onMinimizeToTray={() => setIsMinimizedToTray(true)}
-            onClose={() => setIsMinimizedToTray(true)}
+            onMinimize={handleMinimize}
+            onClose={handleClose}
             isMaximized={isMaximized}
             onToggleMaximize={() => setIsMaximized(!isMaximized)}
             recordingState={recordingState}
@@ -1112,8 +1069,6 @@ export default function App() {
             audioActive={settings.recordMicrophone || settings.recordSpeakers}
           />
         </div>
-      )}
-
       {/* Options Dialog Modal */}
       <OptionsModal
         isOpen={optionsModalOpen}
