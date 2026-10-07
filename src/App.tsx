@@ -110,8 +110,8 @@ export default function App() {
       try {
         const { ipcRenderer } = (window as any).require('electron');
         ipcRenderer.invoke('load-persistent-settings').then((fileSettings: any) => {
-          if (fileSettings) {
-            setSettings((prev) => ({ ...prev, ...fileSettings }));
+            if (fileSettings) {
+              setSettings((prev) => ({ ...prev, ...fileSettings, showWebcamOverlay: false }));
           }
         });
       } catch (e) {
@@ -376,18 +376,25 @@ export default function App() {
     if ((window as any).require) {
       try {
         const { ipcRenderer } = (window as any).require('electron');
-        const arrayBuffer = await finalBlob.arrayBuffer();
-        const saveRes = await ipcRenderer.invoke('save-recording-file', {
-          destinationFolder: settings.destinationFolder,
-          fileName,
-          buffer: new Uint8Array(arrayBuffer),
-        });
-        if (saveRes && saveRes.success) {
-          savedFilePath = saveRes.filePath;
-        }
+        const fs = (window as any).require('fs');
+          const path = (window as any).require('path');
+          const targetDir = settings.destinationFolder;
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const fullPath = path.join(targetDir, fileName);
+          const reader = (finalBlob as any).stream().getReader();
+          const writeStream = fs.createWriteStream(fullPath);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            writeStream.write(value);
+          }
+          writeStream.end();
+          savedFilePath = fullPath;
 
         if (restoreWindow) {
-          ipcRenderer.send('window-restore');
+          ipcRenderer.send('window-resize-normal');
         }
       } catch (err) {
         console.warn('Auto-save note:', err);
@@ -693,7 +700,7 @@ export default function App() {
       if ((window as any).require) {
         try {
           const { ipcRenderer } = (window as any).require('electron');
-          ipcRenderer.send('window-minimize');
+          ipcRenderer.send('window-resize-mini');
         } catch (e) {
           // ignore
         }
@@ -784,10 +791,7 @@ export default function App() {
       timerIntervalRef.current = null;
     }
 
-    // Auto reset elapsed timer immediately for new recording
-    setElapsedMs(0);
-    startTimeRef.current = 0;
-    pausedElapsedRef.current = 0;
+    // Timer reset is now handled safely in recorder.onstop
 
     if (settings.soundRecordToneStop) {
       audioEngine.playTone(440, 0.2); // Stop beep
@@ -796,7 +800,7 @@ export default function App() {
     if ((window as any).require) {
       try {
         const { ipcRenderer } = (window as any).require('electron');
-        ipcRenderer.send('window-restore');
+        ipcRenderer.send('window-resize-normal');
       } catch (e) {}
     }
     setIsMinimizedToTray(false);

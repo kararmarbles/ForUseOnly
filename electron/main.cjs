@@ -301,8 +301,23 @@ function createWindow() {
     win.show();
     win.focus();
   });
+  
+  ipcMain.on('window-resize-mini', () => {
+    if (win.isMinimized()) win.restore();
+    win.setSize(420, 320);
+    win.setAlwaysOnTop(true);
+  });
+  
+  ipcMain.on('window-resize-normal', () => {
+    win.setSize(1200, 800);
+    win.setAlwaysOnTop(false);
+    win.show();
+    win.focus();
+  });
 
   // ── Auto-updater ──────────────────────────────────────────────────────────
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => {
     dialog.showMessageBox(win, {
       type: 'info',
@@ -313,13 +328,13 @@ function createWindow() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    // Silently install on quit or auto-restart if we want
+    // We'll just let autoInstallOnAppQuit handle it, but we can notify the user
     dialog.showMessageBox(win, {
       type: 'info',
       title: 'Update Ready',
-      message: `Version v${info.version} downloaded. Restart now to apply?`,
-      buttons: ['Restart & Install', 'Later'],
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall();
+      message: `Version v${info.version} downloaded. It will be installed automatically when you close the software.`,
+      buttons: ['OK'],
     });
   });
 
