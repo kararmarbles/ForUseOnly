@@ -148,26 +148,7 @@ export default function App() {
     }
   }, []);
 
-  // Auto-minimize when clicking outside the application window (window blur)
-  useEffect(() => {
-    const handleWindowBlur = () => {
-      // Do not minimize if internal modals are open
-      if (optionsModalOpen || recordingsModalOpen || sourcePickerModalOpen) {
-        return;
-      }
-      if ((window as any).require) {
-        try {
-          const { ipcRenderer } = (window as any).require('electron');
-          ipcRenderer.send('window-minimize');
-        } catch (e) {}
-      }
-    };
 
-    window.addEventListener('blur', handleWindowBlur);
-    return () => {
-      window.removeEventListener('blur', handleWindowBlur);
-    };
-  }, [optionsModalOpen, recordingsModalOpen, sourcePickerModalOpen]);
 
   // Save recordings metadata history
   useEffect(() => {
@@ -457,23 +438,33 @@ export default function App() {
           targetDir = 'D:\\Recordings';
         }
 
-        if (!fs.existsSync(targetDir)) {
-          fs.mkdirSync(targetDir, { recursive: true });
+        // Auto-save recording directly into user's desired destination folder (v1.0.0 & v1.0.1 proven pipeline)
+        const arrayBuffer = await finalBlob.arrayBuffer();
+        try {
+          const saveRes = await ipcRenderer.invoke('save-recording-file', {
+            destinationFolder: targetDir,
+            fileName,
+            buffer: new Uint8Array(arrayBuffer),
+          });
+          if (saveRes && saveRes.success) {
+            savedFilePath = saveRes.filePath;
+          }
+        } catch (ipcErr) {
+          console.warn('save-recording-file IPC fallback:', ipcErr);
         }
-        const fullPath = path.join(targetDir, fileName);
 
-        // Stream from blob to disk to avoid out of memory exceptions on large files
-        const webStream = finalBlob.stream();
-        const reader = webStream.getReader();
-        const writeStream = fs.createWriteStream(fullPath);
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          writeStream.write(value);
+        // Direct write fallback if IPC failed
+        if (!savedFilePath) {
+          try {
+            const fs = (window as any).require('fs');
+            const path = (window as any).require('path');
+            const fullPath = path.join(targetDir, fileName);
+            fs.writeFileSync(fullPath, Buffer.from(arrayBuffer));
+            savedFilePath = fullPath;
+          } catch (writeErr) {
+            console.warn('Direct write error:', writeErr);
+          }
         }
-        writeStream.end();
-        savedFilePath = fullPath;
 
         if (restoreWindow) {
           ipcRenderer.send('window-restore');
@@ -565,11 +556,10 @@ export default function App() {
     currentMimeRef.current = selectedMime;
     currentExtRef.current = ext;
 
-    // High bitrate (6 Mbps video, 128 kbps audio) for smooth crisp video playback
+    // Stable 3 Mbps bitrate matching v1.0.0 and v1.0.1 for smooth video generation
     const recorder = new MediaRecorder(combinedStream, {
       mimeType: selectedMime,
-      videoBitsPerSecond: 6000000,
-      audioBitsPerSecond: 128000,
+      videoBitsPerSecond: 3000000,
     });
 
     recordedChunksRef.current = [];
