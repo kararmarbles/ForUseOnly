@@ -57,6 +57,30 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
     }
   }, [settings.showWebcamOverlay, webcamStream]);
 
+  // Prevent infinite mirror by excluding the app window from screen capture
+  useEffect(() => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        if (source === 'screen') {
+          ipcRenderer.send('set-content-protection', true);
+        } else {
+          ipcRenderer.send('set-content-protection', false);
+        }
+      } catch (e) {}
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if ((window as any).require) {
+        try {
+          const { ipcRenderer } = (window as any).require('electron');
+          ipcRenderer.send('set-content-protection', false);
+        } catch (e) {}
+      }
+    };
+  }, [source]);
+
   const hasActiveStream =
     (source === 'screen' && !!screenStream) ||
     (source === 'webcam' && !!webcamStream);

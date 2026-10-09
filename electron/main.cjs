@@ -123,9 +123,20 @@ function registerIpcHandlers() {
   // ── Folder picker ─────────────────────────────────────────────────────────
   ipcMain.handle('dialog:openDirectory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
     });
     return canceled ? null : filePaths;
+  });
+
+  // ── Get default recordings directory dynamically ──────────────────────────
+  ipcMain.handle('get-default-recordings-dir', () => {
+    const defaultDir = path.join(app.getPath('videos'), 'GNOA Recordings');
+    try {
+      if (!fs.existsSync(defaultDir)) {
+        fs.mkdirSync(defaultDir, { recursive: true });
+      }
+    } catch (e) {}
+    return defaultDir;
   });
 
   // ── Auto-save recording to destination folder ─────────────────────────────
@@ -212,6 +223,12 @@ function registerIpcHandlers() {
 
   // ── Return current app version to renderer ────────────────────────────────
   ipcMain.handle('get-app-version', () => APP_VERSION);
+
+  ipcMain.on('set-content-protection', (_event, protect) => {
+    if (mainWindow) {
+      mainWindow.setContentProtection(protect);
+    }
+  });
 }
 
 // ─── Create main window ───────────────────────────────────────────────────────
@@ -247,11 +264,12 @@ function createWindow() {
     icon: iconFile || undefined,
     // ── Security: contextIsolation ON, nodeIntegration OFF ──
     webPreferences: {
-      nodeIntegration: true,      // kept for ipcRenderer.require compatibility with existing renderer code
-      contextIsolation: false,    // kept to match renderer usage of window.require('electron')
+      nodeIntegration: true,
+      contextIsolation: false,
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
+      backgroundThrottling: false,
     },
   });
 

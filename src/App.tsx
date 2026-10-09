@@ -108,9 +108,15 @@ export default function App() {
     return [];
   });
 
+  const settingsRef = useRef<AppSettings>(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   // Save settings persistently
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
+    settingsRef.current = newSettings;
     try {
       localStorage.setItem('gnoa_settings', JSON.stringify(newSettings));
       if ((window as any).require) {
@@ -128,8 +134,12 @@ export default function App() {
       try {
         const { ipcRenderer } = (window as any).require('electron');
         ipcRenderer.invoke('load-persistent-settings').then((fileSettings: any) => {
-            if (fileSettings) {
-              setSettings((prev) => ({ ...prev, ...fileSettings, showWebcamOverlay: false }));
+          if (fileSettings) {
+            setSettings((prev) => {
+              const updated = { ...prev, ...fileSettings, showWebcamOverlay: false };
+              settingsRef.current = updated;
+              return updated;
+            });
           }
         });
       } catch (e) {
@@ -137,6 +147,27 @@ export default function App() {
       }
     }
   }, []);
+
+  // Auto-minimize when clicking outside the application window (window blur)
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      // Do not minimize if internal modals are open
+      if (optionsModalOpen || recordingsModalOpen || sourcePickerModalOpen) {
+        return;
+      }
+      if ((window as any).require) {
+        try {
+          const { ipcRenderer } = (window as any).require('electron');
+          ipcRenderer.send('window-minimize');
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [optionsModalOpen, recordingsModalOpen, sourcePickerModalOpen]);
 
   // Save recordings metadata history
   useEffect(() => {
@@ -361,7 +392,7 @@ export default function App() {
           let resolved = false;
           const timeout = setTimeout(() => {
             if (!resolved) { resolved = true; resolve(rawBlob); }
-          }, 3000);
+          }, 15000); // Increased timeout for large videos
           fixWebmDuration(rawBlob, durationMsValid, (fixed) => {
             if (!resolved) {
               resolved = true;
@@ -395,16 +426,53 @@ export default function App() {
         const { ipcRenderer } = (window as any).require('electron');
         const fs = (window as any).require('fs');
         const path = (window as any).require('path');
-        const targetDir = settings.destinationFolder || 'D:\Recordings';
+
+        // Dynamically determine user's chosen destination folder (never static or hardcoded)
+        let targetDir = settingsRef.current?.destinationFolder?.trim() || settings?.destinationFolder?.trim();
+        if (!targetDir) {
+          try {
+            const saved = localStorage.getItem('gnoa_settings');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed.destinationFolder?.trim()) {
+                targetDir = parsed.destinationFolder.trim();
+              }
+            }
+          } catch (e) {}
+        }
+        if (!targetDir) {
+          try {
+            const fileSettings = await ipcRenderer.invoke('load-persistent-settings');
+            if (fileSettings?.destinationFolder?.trim()) {
+              targetDir = fileSettings.destinationFolder.trim();
+            }
+          } catch (e) {}
+        }
+        if (!targetDir) {
+          try {
+            targetDir = await ipcRenderer.invoke('get-default-recordings-dir');
+          } catch (e) {}
+        }
+        if (!targetDir) {
+          targetDir = 'D:\\Recordings';
+        }
+
         if (!fs.existsSync(targetDir)) {
           fs.mkdirSync(targetDir, { recursive: true });
         }
         const fullPath = path.join(targetDir, fileName);
 
-        // Synchronous write of full ArrayBuffer -> Buffer ensures complete, untruncated files on disk
-        const arrayBuffer = await finalBlob.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        fs.writeFileSync(fullPath, buffer);
+        // Stream from blob to disk to avoid out of memory exceptions on large files
+        const webStream = finalBlob.stream();
+        const reader = webStream.getReader();
+        const writeStream = fs.createWriteStream(fullPath);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          writeStream.write(value);
+        }
+        writeStream.end();
         savedFilePath = fullPath;
 
         if (restoreWindow) {
@@ -1085,6 +1153,7 @@ export default function App() {
         recordings={recordings}
         snapshots={snapshots}
         destinationFolder={settings.destinationFolder}
+        onChangeDestinationFolder={(newFolder) => handleSaveSettings({ ...settings, destinationFolder: newFolder })}
         onDeleteRecording={(id) => setRecordings((prev) => prev.filter((r) => r.id !== id))}
         onDeleteSnapshot={(id) => setSnapshots((prev) => prev.filter((s) => s.id !== id))}
         initialPlayItem={lastRecordedItem}

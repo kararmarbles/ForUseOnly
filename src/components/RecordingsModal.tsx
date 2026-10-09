@@ -9,6 +9,7 @@ interface RecordingsModalProps {
   recordings: RecordingItem[];
   snapshots: SnapshotItem[];
   destinationFolder: string;
+  onChangeDestinationFolder?: (newFolder: string) => void;
   onDeleteRecording: (id: string) => void;
   onDeleteSnapshot: (id: string) => void;
   initialPlayItem?: RecordingItem | null;
@@ -20,6 +21,7 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
   recordings,
   snapshots,
   destinationFolder,
+  onChangeDestinationFolder,
   onDeleteRecording,
   onDeleteSnapshot,
   initialPlayItem = null,
@@ -98,6 +100,24 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
     }
   };
 
+  const handleChangeDestinationFolder = async () => {
+    if ((window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        const result = await ipcRenderer.invoke('dialog:openDirectory');
+        if (result && result.length > 0 && onChangeDestinationFolder) {
+          onChangeDestinationFolder(result[0]);
+        }
+      } catch (err) {
+        const newPath = prompt('Enter new destination folder path:', destinationFolder);
+        if (newPath && onChangeDestinationFolder) onChangeDestinationFolder(newPath);
+      }
+    } else {
+      const newPath = prompt('Enter new destination folder path:', destinationFolder);
+      if (newPath && onChangeDestinationFolder) onChangeDestinationFolder(newPath);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -108,9 +128,14 @@ export const RecordingsModal: React.FC<RecordingsModalProps> = ({
           <div className="flex items-center space-x-2">
             <Folder className="w-4 h-4 text-yellow-500" />
             <span className="font-semibold text-white">GNOA Recordings Library</span>
-            <span className="text-slate-400 font-mono text-[11px] truncate max-w-xs">
-              [{destinationFolder}]
-            </span>
+            <button
+              onClick={handleChangeDestinationFolder}
+              className="text-slate-400 hover:text-cyan-300 font-mono text-[11px] truncate max-w-xs bg-[#1a1a1a] hover:bg-[#2a2a2a] px-2 py-0.5 rounded border border-[#444] transition-colors flex items-center space-x-1"
+              title="Click to change destination folder"
+            >
+              <span>[{destinationFolder}]</span>
+              <span className="text-[10px] text-cyan-400 font-sans">Change</span>
+            </button>
           </div>
           <button
             onClick={onClose}
